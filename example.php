@@ -1,12 +1,15 @@
 <?php
 
-require_once __DIR__ . '/Erorus/DB2/Reader.php';
+require_once __DIR__ . '/src/autoload.php';
 
 use \Erorus\DB2\Reader;
 
 $path = isset($argv[1]) ? $argv[1] : 'Achievement.db2';
+if (!file_exists($path)) {
+    $path = __DIR__.'/db2/wdb5/' . $path;
+}
 
-$reader = new Reader(__DIR__.'/db2/wdb5/' . $path);
+$reader = new Reader($path);
 //print_r($reader->setFieldsSigned([4=>true,11=>true]));
 //print_r($reader->setFieldNames(['name','description','flags']));
 

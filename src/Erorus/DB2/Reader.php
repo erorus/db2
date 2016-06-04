@@ -13,9 +13,11 @@ class Reader
     const FIELD_TYPE_FLOAT = 2;
     const FIELD_TYPE_STRING = 3;
 
-    private $filePath = '';
     private $fileHandle;
+    private $fileHandleOpened = false;
     private $fileFormat = '';
+    private $fileName = '';
+    private $fileSize = 0;
 
     private $headerSize = 0;
     private $recordCount = 0;
@@ -45,12 +47,22 @@ class Reader
     private $recordOffsets = null;
 
     function __construct($db2path, $stringFields = null) {
-        if (!file_exists($db2path)) {
-            throw new \Exception("$db2path not found");
+        if (is_string($db2path)) {
+            $this->fileHandle = @fopen($db2path, 'rb');
+            if ($this->fileHandle === false) {
+                throw new \Exception("Error opening ".$db2path);
+            }
+            $this->fileHandleOpened = true;
+            $this->fileName = strtolower(basename($db2path));
+        } else if (is_resource($db2path) && get_resource_type($db2path) == 'stream') {
+            $this->fileHandle = $db2path;
+            rewind($this->fileHandle);
+        } else {
+            throw new \Exception("Must supply path to DB2 file, or stream");
         }
 
-        $this->filePath = $db2path;
-        $this->fileHandle = fopen($this->filePath, 'rb');
+        $fstat = fstat($this->fileHandle);
+        $this->fileSize = $fstat['size'];
         $this->fileFormat = fread($this->fileHandle, 4);
         switch ($this->fileFormat) {
             case 'WDB5':
@@ -62,7 +74,9 @@ class Reader
     }
 
     function __destruct() {
-        fclose($this->fileHandle);
+        if ($this->fileHandleOpened) {
+            fclose($this->fileHandle);
+        }
     }
 
     ///// initialization
@@ -92,16 +106,15 @@ class Reader
             if (!$this->hasIdBlock) {
                 throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
-            $this->stringBlockPos = filesize($this->filePath) - $this->copyBlockSize - ($this->recordCount * 4);
+            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - ($this->recordCount * 4);
             $this->indexBlockPos = $this->stringBlockSize;
             $this->stringBlockSize = 0;
 
             if (is_null($stringFields)) {
-                $fileName = strtolower(basename($this->filePath));
-                if (array_key_exists($fileName, static::EMBEDDED_STRING_FIELDS)) {
-                    $stringFields = static::EMBEDDED_STRING_FIELDS[$fileName];
+                if (array_key_exists($this->fileName, static::EMBEDDED_STRING_FIELDS)) {
+                    $stringFields = static::EMBEDDED_STRING_FIELDS[$this->fileName];
                 } else {
-                    throw new \Exception("$fileName has embedded strings, but string fields were not supplied during instantiation");
+                    throw new \Exception($this->fileName." has embedded strings, but string fields were not supplied during instantiation");
                 }
             }
         } else {
@@ -115,11 +128,9 @@ class Reader
         }
 
         $eof = $this->copyBlockPos + $this->copyBlockSize;
-        if ($eof != filesize($this->filePath)) {
-            throw new \Exception("Expected size: $eof, actual size: ".filesize($this->filePath));
+        if ($eof != $this->fileSize) {
+            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
-
-        //print_r($this);
 
         fseek($this->fileHandle, 48);
         $this->recordFormat = [];
