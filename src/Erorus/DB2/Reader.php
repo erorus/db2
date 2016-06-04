@@ -14,7 +14,6 @@ class Reader
     const FIELD_TYPE_STRING = 3;
 
     private $fileHandle;
-    private $fileHandleOpened = false;
     private $fileFormat = '';
     private $fileName = '';
     private $fileSize = 0;
@@ -52,13 +51,9 @@ class Reader
             if ($this->fileHandle === false) {
                 throw new \Exception("Error opening ".$db2path);
             }
-            $this->fileHandleOpened = true;
             $this->fileName = strtolower(basename($db2path));
-        } else if (is_resource($db2path) && get_resource_type($db2path) == 'stream') {
-            $this->fileHandle = $db2path;
-            rewind($this->fileHandle);
         } else {
-            throw new \Exception("Must supply path to DB2 file, or stream");
+            throw new \Exception("Must supply path to DB2 file");
         }
 
         $fstat = fstat($this->fileHandle);
@@ -74,9 +69,7 @@ class Reader
     }
 
     function __destruct() {
-        if ($this->fileHandleOpened) {
-            fclose($this->fileHandle);
-        }
+        fclose($this->fileHandle);
     }
 
     ///// initialization
