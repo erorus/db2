@@ -372,8 +372,12 @@ class ReaderTest extends phpunit\framework\TestCase
         } catch (Exception $e) {
             $this->assertEquals("embedstrings.db2 has embedded strings, but string fields were not supplied during instantiation", $e->getMessage());
         }
-
     }
 
+    public function testKnownEmbedStrings()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/Item-Sparse.db2');
+        $this->assertEquals(4, $reader->getFieldCount());
+    }
 }
 
