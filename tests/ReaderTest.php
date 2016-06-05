@@ -409,5 +409,15 @@ class ReaderTest extends phpunit\framework\TestCase
             $this->assertEquals("Could not find end of embedded string 2 x 0 in record 0", $e->getMessage());
         }
     }
+
+    public function testCopyBlockReferenceMissingId()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/BadCopyBlock.db2', [2]);
+            $this->fail("No exception raised with bad copy block reference");
+        } catch (Exception $e) {
+            $this->assertEquals("Copy block referenced ID 10066329 which does not exist", $e->getMessage());
+        }
+    }
 }
 
