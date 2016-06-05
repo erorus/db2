@@ -178,16 +178,16 @@ class ReaderTest extends phpunit\framework\TestCase
         $reader->setFieldsSigned([true]);
 
         $recordCount = 0;
-        foreach ($reader->generateRecords() as $id => $row) {
+        foreach ($reader->generateRecords() as $id => $rec) {
             if (++$recordCount > 2) {
                 break;
             }
             switch ($id) {
                 case 100:
-                    $this->assertEquals('{"value":-56}', json_encode($row));
+                    $this->assertEquals('{"value":-56}', json_encode($rec));
                     break;
                 case 150:
-                    $this->assertEquals('{"value":-6}', json_encode($row));
+                    $this->assertEquals('{"value":-6}', json_encode($rec));
                     break;
                 default:
                     $this->fail("Returned unknown ID $id from idblock2.db2");
@@ -234,28 +234,103 @@ class ReaderTest extends phpunit\framework\TestCase
     {
         $reader = new Reader(static::WDB5_PATH.'/fieldtypes.db2');
 
-        $row = $reader->getRecord(100);
-        $this->assertEquals(10,         $row[0]); // 1-byte
-        $this->assertEquals(2000,       $row[1]); // 2-byte
-        $this->assertEquals(200000,     $row[2]); // 3-byte
-        $this->assertEquals(10,         $row[3]); // 4-byte
-        $this->assertEquals(2.5,        $row[4]); // float
-        $this->assertEquals('Test',     $row[5]); // string
+        $rec = $reader->getRecord(100);
+        $this->assertEquals(10,         $rec[0]); // 1-byte
+        $this->assertEquals(2000,       $rec[1]); // 2-byte
+        $this->assertEquals(200000,     $rec[2]); // 3-byte
+        $this->assertEquals(10,         $rec[3]); // 4-byte
+        $this->assertEquals(2.5,        $rec[4]); // float
+        $this->assertEquals('Test',     $rec[5]); // string
 
-        $row = $reader->getRecord(150);
-        $this->assertEquals(250,        $row[0]);
-        $this->assertEquals(2500,       $row[1]);
-        $this->assertEquals(250000,     $row[2]);
-        $this->assertEquals(25000000,   $row[3]);
-        $this->assertEquals(-2.5,       $row[4]);
-        $this->assertEquals('Pass',     $row[5]);
+        $rec = $reader->getRecord(150);
+        $this->assertEquals(250,        $rec[0]);
+        $this->assertEquals(65000,      $rec[1]);
+        $this->assertEquals(9000000,    $rec[2]);
+        $this->assertEquals(2500000000, $rec[3]);
+        $this->assertEquals(-2.5,       $rec[4]);
+        $this->assertEquals('Passed',   $rec[5]);
 
-        $row = $reader->getRecord(200);
-        $this->assertEquals(0,          $row[0]);
-        $this->assertEquals(0,          $row[1]);
-        $this->assertEquals(0,          $row[2]);
-        $this->assertEquals(0,          $row[3]);
-        $this->assertEquals(0,          $row[4]);
-        $this->assertEquals('',         $row[5]);
+        $rec = $reader->getRecord(200);
+        $this->assertEquals(0,          $rec[0]);
+        $this->assertEquals(0,          $rec[1]);
+        $this->assertEquals(0,          $rec[2]);
+        $this->assertEquals(0,          $rec[3]);
+        $this->assertEquals(0,          $rec[4]);
+        $this->assertEquals('',         $rec[5]);
+    }
+
+    public function testSignedInts()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/fieldtypes.db2');
+
+        $ret = $reader->setFieldsSigned([true,true,true,true]);
+        $this->assertNotFalse($ret[0]);
+        $this->assertNotFalse($ret[1]);
+        $this->assertNotFalse($ret[2]);
+        $this->assertNotFalse($ret[3]);
+
+        $rec = $reader->getRecord(150);
+        $this->assertEquals(-6,          $rec[0]);
+        $this->assertEquals(-536,        $rec[1]);
+        $this->assertEquals(-7777216,    $rec[2]);
+        $this->assertEquals(-1794967296, $rec[3]);
+
+        $ret = $reader->setFieldsSigned([false,false,false,false]);
+        $this->assertFalse($ret[0]);
+        $this->assertFalse($ret[1]);
+        $this->assertFalse($ret[2]);
+        $this->assertFalse($ret[3]);
+
+        $rec = $reader->getRecord(150);
+        $this->assertEquals(250,        $rec[0]);
+        $this->assertEquals(65000,      $rec[1]);
+        $this->assertEquals(9000000,    $rec[2]);
+        $this->assertEquals(2500000000, $rec[3]);
+    }
+
+    public function testIgnoreSignedOther()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/fieldtypes.db2');
+
+        $ret = $reader->setFieldsSigned([
+            4 => false, // float field, always signed
+            5 => true, // string field, never signed
+        ]);
+        $this->assertNotFalse($ret[4]);
+        $this->assertFalse($ret[5]);
+    }
+
+    public function testIDField()
+    {
+        $reader = new Reader(static::WDB5_PATH.'/idfield.db2');
+
+        $rec = $reader->getRecord(150);
+        $this->assertEquals(250,        $rec[0]);
+        $this->assertEquals(2500,       $rec[1]);
+        $this->assertEquals(250000,     $rec[2]);
+        $this->assertEquals(25000000,   $rec[3]);
+        $this->assertEquals(-2.5,       $rec[4]);
+        $this->assertEquals('Pass',     $rec[5]);
+        $this->assertEquals(150,        $rec[6]);
+    }
+
+    public function testIgnoreSignedIDField()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/idfield.db2');
+
+        $ret = $reader->setFieldsSigned([6 => true]);
+        $this->assertFalse($ret[6]);
+    }
+
+    public function testCopyBlock()
+    {
+        $reader = new Reader(static::WDB5_PATH.'/copyblock.db2');
+
+        $from = $reader->getRecord(100);
+        $this->assertEquals(100, $from[6]);
+
+        $to = $reader->getRecord(105);
+        $this->assertEquals(json_encode($from), json_encode($to));
     }
 }
+

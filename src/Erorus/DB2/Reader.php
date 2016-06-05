@@ -266,6 +266,7 @@ class Reader
                 }
                 $this->idMap[$newId] = $this->idMap[$existingId];
             }
+            ksort($this->idMap, SORT_NUMERIC);
         }
     }
 
