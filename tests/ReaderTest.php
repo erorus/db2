@@ -168,7 +168,7 @@ class ReaderTest extends phpunit\framework\TestCase
         $reader = new Reader(static::WDB5_PATH.'/IdBlock2.db2');
         $allIDs = $reader->getIds();
 
-        $this->assertEquals('[100,150]', json_encode($allIDs));
+        $this->assertEquals([100,150], $allIDs);
     }
 
     public function testRecordIterator()
@@ -184,10 +184,10 @@ class ReaderTest extends phpunit\framework\TestCase
             }
             switch ($id) {
                 case 100:
-                    $this->assertEquals('{"value":-56}', json_encode($rec));
+                    $this->assertEquals(["value" => -56], $rec);
                     break;
                 case 150:
-                    $this->assertEquals('{"value":-6}', json_encode($rec));
+                    $this->assertEquals(["value" => -6], $rec);
                     break;
                 default:
                     $this->fail("Returned unknown ID $id from IdBlock2.db2");
@@ -211,23 +211,20 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFlattenNormalRecord()
     {
-        $rec = [2,4,1,3];
-        $result = Reader::flattenRecord($rec);
-        $this->assertEquals(json_encode($rec), json_encode($result));
+        $result = Reader::flattenRecord([2,4,1,3]);
+        $this->assertEquals([2,4,1,3], $result);
     }
 
     public function testFlattenNamedRecord()
     {
-        $rec = ['b' => 2, 'd' => 4, 'a' => 1, 'c' => 3];
-        $result = Reader::flattenRecord($rec);
-        $this->assertEquals(json_encode($rec), json_encode($result));
+        $result = Reader::flattenRecord(['b' => 2, 'd' => 4, 'a' => 1, 'c' => 3]);
+        $this->assertEquals(['b' => 2, 'd' => 4, 'a' => 1, 'c' => 3], $result);
     }
 
     public function testFlattenRecordWithArrays()
     {
-        $rec = [2,[10,20],1,[40,30]];
-        $result = Reader::flattenRecord($rec);
-        $this->assertEquals('{"0":2,"1-0":10,"1-1":20,"2":1,"3-0":40,"3-1":30}', json_encode($result));
+        $result = Reader::flattenRecord([2,[10,20],1,[40,30]]);
+        $this->assertEquals(["0" => 2, "1-0" => 10, "1-1" => 20, "2" => 1, "3-0" => 40, "3-1" => 30], $result);
     }
 
     public function testFieldTypeDetection()
@@ -330,7 +327,47 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(100, $from[6]);
 
         $to = $reader->getRecord(105);
-        $this->assertEquals(json_encode($from), json_encode($to));
+        $this->assertEquals($from, $to);
+    }
+
+    public function testArrayFields()
+    {
+        $reader = new Reader(static::WDB5_PATH.'/Arrays.db2');
+
+        $rec = $reader->getRecord(100);
+        $this->assertEquals([10,100],           $rec[0]); // 1-byte
+        $this->assertEquals([2000,20000],       $rec[1]); // 2-byte
+        $this->assertEquals([200000,2000000],   $rec[2]); // 3-byte
+        $this->assertEquals([10,5],             $rec[3]); // 4-byte
+        $this->assertEquals([2.5,1.25],         $rec[4]); // float
+        $this->assertEquals(["One","Two"],      $rec[5]); // string
+        $this->assertEquals(100,                $rec[6]); // 1-byte id
+
+        $rec = $reader->getRecord(150);
+        $this->assertEquals([250,205],              $rec[0]); // 1-byte
+        $this->assertEquals([1250,2500],            $rec[1]); // 2-byte
+        $this->assertEquals([250000,62500],         $rec[2]); // 3-byte
+        $this->assertEquals([25000000,1234567890],  $rec[3]); // 4-byte
+        $this->assertEquals([-2.5,-1.25],           $rec[4]); // float
+        $this->assertEquals(["Three","Two"],        $rec[5]); // string
+        $this->assertEquals(150,                    $rec[6]); // 1-byte id
+
+        $reader->setFieldsSigned([true,true,true,true]);
+
+        $rec = $reader->getRecord(150);
+        $this->assertEquals([-6,-51],               $rec[0]); // 1-byte
+        $this->assertEquals([1250,2500],            $rec[1]); // 2-byte
+        $this->assertEquals([250000,62500],         $rec[2]); // 3-byte
+        $this->assertEquals([25000000,1234567890],  $rec[3]); // 4-byte
+
+        $rec = $reader->getRecord(200);
+        $this->assertEquals([0,0],      $rec[0]);
+        $this->assertEquals([0,0],      $rec[1]);
+        $this->assertEquals([0,0],      $rec[2]);
+        $this->assertEquals([0,0],      $rec[3]);
+        $this->assertEquals([0,0],      $rec[4]);
+        $this->assertEquals(["",""],    $rec[5]);
+        $this->assertEquals(200,        $rec[6]);
     }
 
     public function testEmbedStringsWithoutIdBlock()
@@ -353,7 +390,7 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals('Embedded', $rec[2]);
         $this->assertEquals(751,        $rec[3]);
 
-        $this->assertEquals(json_encode($rec), json_encode($reader->getRecord(101))); // 101 just points to 100's data in index block
+        $this->assertEquals($rec, $reader->getRecord(101)); // 101 just points to 100's data in index block
 
         $rec = $reader->getRecord(103);
         $this->assertEquals(12345,          $rec[0]);
@@ -361,7 +398,7 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals('Strings Test', $rec[2]);
         $this->assertEquals(43210,          $rec[3]);
 
-        $this->assertEquals(json_encode($rec), json_encode($reader->getRecord(102))); // 102 just points to 103's data in index block
+        $this->assertEquals($rec, $reader->getRecord(102)); // 102 just points to 103's data in index block
     }
 
     public function testUnknownEmbedStrings()
