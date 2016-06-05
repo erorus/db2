@@ -30,10 +30,10 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testInvalidFileFormat()
     {
-        $format = substr(file_get_contents(static::WDB5_PATH.'/badformat.db2'), 0, 4);
+        $format = substr(file_get_contents(static::WDB5_PATH.'/BadFormat.db2'), 0, 4);
 
         try {
-            $reader = new Reader(static::WDB5_PATH.'/badformat.db2');
+            $reader = new Reader(static::WDB5_PATH.'/BadFormat.db2');
             $this->fail("Did not throw exception on unknown file format");
         } catch (Exception $e) {
             $this->assertEquals("Unknown format: $format", $e->getMessage());
@@ -42,40 +42,40 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testWDB5FormatLoad()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
         $this->assertEquals(1, $reader->getFieldCount());
     }
 
     public function testFileTooLong()
     {
         try {
-            $reader = new Reader(static::WDB5_PATH.'/toolong.db2');
+            $reader = new Reader(static::WDB5_PATH.'/TooLong.db2');
             $this->fail("Did not notice db2 file was too long");
         } catch (Exception $e) {
-            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/toolong.db2').'$/', $e->getMessage());
+            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/TooLong.db2').'$/', $e->getMessage());
         }
     }
 
     public function testFileTooShort()
     {
         try {
-            $reader = new Reader(static::WDB5_PATH.'/tooshort.db2');
+            $reader = new Reader(static::WDB5_PATH.'/TooShort.db2');
             $this->fail("Did not notice db2 file was too short");
         } catch (Exception $e) {
-            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/tooshort.db2').'$/', $e->getMessage());
+            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/TooShort.db2').'$/', $e->getMessage());
         }
     }
 
     public function testLoadRecordFromIDBlock()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdBlock.db2');
         $rec = $reader->getRecord(100);
         $this->assertEquals(200, $rec[0]);
     }
 
     public function testSignedByte()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         $ret = $reader->setFieldsSigned([true]);
         $this->assertNotFalse($ret[0]);
@@ -92,7 +92,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testSignedFieldOutOfBounds()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         try {
             $reader->setFieldsSigned([false, true]);
@@ -104,7 +104,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFieldNames()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         $ret = $reader->setFieldNames(['value']);
         $this->assertEquals('value', $ret[0]);
@@ -121,7 +121,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFieldNameInvalidIndex()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         try {
             $reader->setFieldNames(['abc' => 'abc']);
@@ -133,7 +133,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFieldNameNumeric()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         try {
             $reader->setFieldNames([99]);
@@ -145,7 +145,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFieldOutOfBounds()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
 
         try {
             $reader->setFieldNames([99=>'test']);
@@ -157,7 +157,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testUnknownRecordID()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idblock.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdBlock.db2');
         $rec = $reader->getRecord(999);
 
         $this->assertNotFalse(is_null($rec));
@@ -165,7 +165,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testIDList()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
         $allIDs = $reader->getIds();
 
         $this->assertEquals('[100,150]', json_encode($allIDs));
@@ -173,7 +173,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testRecordIterator()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
         $reader->setFieldNames(['value']);
         $reader->setFieldsSigned([true]);
 
@@ -190,12 +190,12 @@ class ReaderTest extends phpunit\framework\TestCase
                     $this->assertEquals('{"value":-6}', json_encode($rec));
                     break;
                 default:
-                    $this->fail("Returned unknown ID $id from idblock2.db2");
+                    $this->fail("Returned unknown ID $id from Idblock2.db2");
                     break;
             }
         }
         if ($recordCount != 2) {
-            $this->fail("Returned $recordCount records instead of 2 from idblock2.db2 in iterator");
+            $this->fail("Returned $recordCount records instead of 2 from Idblock2.db2 in iterator");
         }
     }
 
@@ -232,7 +232,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testFieldTypeDetection()
     {
-        $reader = new Reader(static::WDB5_PATH.'/fieldtypes.db2');
+        $reader = new Reader(static::WDB5_PATH.'/FieldTypes.db2');
 
         $rec = $reader->getRecord(100);
         $this->assertEquals(10,         $rec[0]); // 1-byte
@@ -261,7 +261,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testSignedInts()
     {
-        $reader = new Reader(static::WDB5_PATH . '/fieldtypes.db2');
+        $reader = new Reader(static::WDB5_PATH . '/FieldTypes.db2');
 
         $ret = $reader->setFieldsSigned([true,true,true,true]);
         $this->assertNotFalse($ret[0]);
@@ -290,7 +290,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testIgnoreSignedOther()
     {
-        $reader = new Reader(static::WDB5_PATH . '/fieldtypes.db2');
+        $reader = new Reader(static::WDB5_PATH . '/FieldTypes.db2');
 
         $ret = $reader->setFieldsSigned([
             4 => false, // float field, always signed
@@ -302,7 +302,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testIDField()
     {
-        $reader = new Reader(static::WDB5_PATH.'/idfield.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdField.db2');
 
         $rec = $reader->getRecord(150);
         $this->assertEquals(250,        $rec[0]);
@@ -316,7 +316,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testIgnoreSignedIDField()
     {
-        $reader = new Reader(static::WDB5_PATH . '/idfield.db2');
+        $reader = new Reader(static::WDB5_PATH . '/IdField.db2');
 
         $ret = $reader->setFieldsSigned([6 => true]);
         $this->assertFalse($ret[6]);
@@ -324,7 +324,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testCopyBlock()
     {
-        $reader = new Reader(static::WDB5_PATH.'/copyblock.db2');
+        $reader = new Reader(static::WDB5_PATH.'/CopyBlock.db2');
 
         $from = $reader->getRecord(100);
         $this->assertEquals(100, $from[6]);
