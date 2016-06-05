@@ -430,7 +430,7 @@ class Reader
     public function setFieldsSigned(Array $fields) {
         foreach ($fields as $fieldId => $isSigned) {
             if ($fieldId < 0 || $fieldId >= $this->fieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-{$this->fieldCount}");
+                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->fieldCount - 1));
             }
             if (!$this->hasIdBlock && $this->idField == $fieldId) {
                 continue;
@@ -457,7 +457,7 @@ class Reader
                 throw new \Exception("Field $fieldId Name ($name) must NOT be numeric");
             }
             if ($fieldId < 0 || $fieldId >= $this->fieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-{$this->fieldCount}");
+                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->fieldCount - 1));
             }
             if (!$name) {
                 unset($this->recordFormat[$fieldId]['name']);
@@ -478,19 +478,15 @@ class Reader
     // static utils
 
     public static function flattenRecord(Array $record) {
-        if (!is_array($record)) {
-            throw new \Exception("Expected array input for flattenRecord");
-        }
         $result = [];
-        ksort($record);
-        $idx = 0;
         foreach ($record as $k => $v) {
             if (!is_array($v)) {
-                $result[$idx++] = $v;
+                $result[$k] = $v;
                 continue;
             }
+            $idx = 0;
             foreach ($v as $vv) {
-                $result[$idx++] = $vv;
+                $result["$k-" . $idx++] = $vv;
             }
         }
         return $result;
