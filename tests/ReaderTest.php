@@ -229,4 +229,33 @@ class ReaderTest extends phpunit\framework\TestCase
         $result = Reader::flattenRecord($rec);
         $this->assertEquals('{"0":2,"1-0":10,"1-1":20,"2":1,"3-0":40,"3-1":30}', json_encode($result));
     }
+
+    public function testFieldTypeDetection()
+    {
+        $reader = new Reader(static::WDB5_PATH.'/fieldtypes.db2');
+
+        $row = $reader->getRecord(100);
+        $this->assertEquals(10,         $row[0]); // 1-byte
+        $this->assertEquals(2000,       $row[1]); // 2-byte
+        $this->assertEquals(200000,     $row[2]); // 3-byte
+        $this->assertEquals(10,         $row[3]); // 4-byte
+        $this->assertEquals(2.5,        $row[4]); // float
+        $this->assertEquals('Test',     $row[5]); // string
+
+        $row = $reader->getRecord(150);
+        $this->assertEquals(250,        $row[0]);
+        $this->assertEquals(2500,       $row[1]);
+        $this->assertEquals(250000,     $row[2]);
+        $this->assertEquals(25000000,   $row[3]);
+        $this->assertEquals(-2.5,       $row[4]);
+        $this->assertEquals('Pass',     $row[5]);
+
+        $row = $reader->getRecord(200);
+        $this->assertEquals(0,          $row[0]);
+        $this->assertEquals(0,          $row[1]);
+        $this->assertEquals(0,          $row[2]);
+        $this->assertEquals(0,          $row[3]);
+        $this->assertEquals(0,          $row[4]);
+        $this->assertEquals('',         $row[5]);
+    }
 }

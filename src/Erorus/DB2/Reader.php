@@ -88,7 +88,7 @@ class Reader
         $this->locale           = $parts[8];
         $this->copyBlockSize    = $parts[9];
         $this->flags            = $parts[10];
-        $this->idField         = $parts[11];
+        $this->idField          = $parts[11];
 
         $this->headerSize = 48 + $this->fieldCount * 4;
 
@@ -167,10 +167,7 @@ class Reader
 
     private function guessFieldTypes() {
         foreach ($this->recordFormat as $fieldId => &$format) {
-            if ($format['type'] != static::FIELD_TYPE_UNKNOWN) {
-                continue;
-            }
-            if ($format['valueLength'] != 4) {
+            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['valueLength'] != 4) {
                 continue;
             }
 
