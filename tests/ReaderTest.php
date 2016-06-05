@@ -42,7 +42,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testWDB5FormatLoad()
     {
-        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdBlock2.db2');
         $this->assertEquals(1, $reader->getFieldCount());
     }
 
@@ -165,7 +165,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testIDList()
     {
-        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdBlock2.db2');
         $allIDs = $reader->getIds();
 
         $this->assertEquals('[100,150]', json_encode($allIDs));
@@ -173,7 +173,7 @@ class ReaderTest extends phpunit\framework\TestCase
 
     public function testRecordIterator()
     {
-        $reader = new Reader(static::WDB5_PATH.'/Idblock2.db2');
+        $reader = new Reader(static::WDB5_PATH.'/IdBlock2.db2');
         $reader->setFieldNames(['value']);
         $reader->setFieldsSigned([true]);
 
@@ -190,12 +190,12 @@ class ReaderTest extends phpunit\framework\TestCase
                     $this->assertEquals('{"value":-6}', json_encode($rec));
                     break;
                 default:
-                    $this->fail("Returned unknown ID $id from Idblock2.db2");
+                    $this->fail("Returned unknown ID $id from IdBlock2.db2");
                     break;
             }
         }
         if ($recordCount != 2) {
-            $this->fail("Returned $recordCount records instead of 2 from Idblock2.db2 in iterator");
+            $this->fail("Returned $recordCount records instead of 2 from IdBlock2.db2 in iterator");
         }
     }
 
