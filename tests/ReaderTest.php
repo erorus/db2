@@ -399,5 +399,15 @@ class ReaderTest extends phpunit\framework\TestCase
             $this->assertEquals("Expected ID field 5 reportedly has 2 values per row", $e->getMessage());
         }
     }
+
+    public function testEmbedStringNoEnd()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsNoEnd.db2', [2]);
+            $this->fail("No exception raised with bad embedded string record");
+        } catch (Exception $e) {
+            $this->assertEquals("Could not find end of embedded string 2 x 0 in record 0", $e->getMessage());
+        }
+    }
 }
 
