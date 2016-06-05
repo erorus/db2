@@ -146,7 +146,7 @@ class Reader
 
         if (!$this->hasIdBlock) {
             if ($this->idField >= $this->fieldCount) {
-                throw new \Exception("Expected ID field " . $this->idField . " is greater/equal to number of fields: " . $this->fieldCount);
+                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
             }
             if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
                 throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");

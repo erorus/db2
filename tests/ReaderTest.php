@@ -332,5 +332,48 @@ class ReaderTest extends phpunit\framework\TestCase
         $to = $reader->getRecord(105);
         $this->assertEquals(json_encode($from), json_encode($to));
     }
+
+    public function testEmbedStringsWithoutIdBlock()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsWithoutIdBlock.db2');
+            $this->fail("No exception raised with file with embedded strings without id block");
+        } catch (Exception $e) {
+            $this->assertEquals("File has embedded strings and no ID block, which was not expected, aborting", $e->getMessage());
+        }
+    }
+
+    public function testEmbedStrings()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/EmbedStrings.db2', [2]);
+
+        $rec = $reader->getRecord(100);
+        $this->assertEquals(9000,       $rec[0]);
+        $this->assertEquals(750,        $rec[1]);
+        $this->assertEquals('Embedded', $rec[2]);
+        $this->assertEquals(751,        $rec[3]);
+
+        $this->assertEquals(json_encode($rec), json_encode($reader->getRecord(101))); // 101 just points to 100's data in index block
+
+        $rec = $reader->getRecord(103);
+        $this->assertEquals(12345,          $rec[0]);
+        $this->assertEquals(98765,          $rec[1]);
+        $this->assertEquals('Strings Test', $rec[2]);
+        $this->assertEquals(43210,          $rec[3]);
+
+        $this->assertEquals(json_encode($rec), json_encode($reader->getRecord(102))); // 102 just points to 103's data in index block
+    }
+
+    public function testUnknownEmbedStrings()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
+            $this->fail("No exception raised with file with unknown embedded strings file");
+        } catch (Exception $e) {
+            $this->assertEquals("embedstrings.db2 has embedded strings, but string fields were not supplied during instantiation", $e->getMessage());
+        }
+
+    }
+
 }
 
