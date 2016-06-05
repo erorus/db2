@@ -379,5 +379,25 @@ class ReaderTest extends phpunit\framework\TestCase
         $reader = new Reader(static::WDB5_PATH . '/Item-Sparse.db2');
         $this->assertEquals(4, $reader->getFieldCount());
     }
+
+    public function testBadIdField()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/BadIdField.db2');
+            $this->fail("No exception raised with bad ID field in header");
+        } catch (Exception $e) {
+            $this->assertEquals("Expected ID field 88 does not exist. Only found 7 fields.", $e->getMessage());
+        }
+    }
+
+    public function testBadIdFieldCount()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/BadIdFieldCount.db2');
+            $this->fail("No exception raised with bad ID field count in header");
+        } catch (Exception $e) {
+            $this->assertEquals("Expected ID field 5 reportedly has 2 values per row", $e->getMessage());
+        }
+    }
 }
 
