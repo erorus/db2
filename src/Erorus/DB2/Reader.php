@@ -317,7 +317,9 @@ class Reader
         if (!is_null($this->recordOffsets)) {
             $pointer = unpack('Vpos/vsize', $this->recordOffsets[$recordOffset]);
             if ($pointer['size'] == 0) {
+                // @codeCoverageIgnoreStart
                 throw new \Exception("Requested record offset $recordOffset which is empty");
+                // @codeCoverageIgnoreEnd
             }
             fseek($this->fileHandle, $pointer['pos']);
             $data = fread($this->fileHandle, $pointer['size']);
@@ -330,7 +332,9 @@ class Reader
 
     private function getString($stringBlockOffset) {
         if ($stringBlockOffset >= $this->stringBlockSize) {
+            // @codeCoverageIgnoreStart
             throw new \Exception("Asked to get string from $stringBlockOffset, string block size is only ".$this->stringBlockSize);
+            // @codeCoverageIgnoreEnd
         }
         $maxLength = $this->stringBlockSize - $stringBlockOffset;
 
@@ -340,7 +344,9 @@ class Reader
 
     private function getRecordByOffset($recordOffset) {
         if ($recordOffset < 0 || $recordOffset >= $this->recordCount) {
+            // @codeCoverageIgnoreStart
             throw new \Exception("Requested record offset $recordOffset out of bounds: 0-".$this->recordCount);
+            // @codeCoverageIgnoreEnd
         }
 
         $record = $this->getRawRecord($recordOffset);
