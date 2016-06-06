@@ -4,16 +4,13 @@ require_once __DIR__ . '/src/autoload.php';
 
 use \Erorus\DB2\Reader;
 
-$path = isset($argv[1]) ? $argv[1] : 'Achievement.db2';
-if (!file_exists($path)) {
-    $path = __DIR__.'/db2/wdb5/' . $path;
+if (isset($argv[1])) {
+    $path = $argv[1];
+} else {
+    $path = __DIR__.'/tests/wdb5/FieldTypes.db2';
 }
 
 $reader = new Reader($path);
-//print_r($reader->setFieldsSigned([4=>true,11=>true]));
-//print_r($reader->setFieldNames(['name','description','flags']));
-
-//print_r($reader->getRecord(118852));
 
 $recordNum = 0;
 foreach ($reader->generateRecords() as $id => $record) {
