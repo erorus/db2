@@ -13,6 +13,8 @@ class Reader
     const FIELD_TYPE_FLOAT = 2;
     const FIELD_TYPE_STRING = 3;
 
+    const DISTINCT_STRINGS_REQUIRED = 5;
+
     private $fileHandle;
     private $fileFormat = '';
     private $fileName = '';
@@ -60,6 +62,9 @@ class Reader
         $this->fileSize = $fstat['size'];
         $this->fileFormat = fread($this->fileHandle, 4);
         switch ($this->fileFormat) {
+            case 'WDB2':
+                $this->openWdb2();
+                break;
             case 'WDB5':
                 $this->openWdb5($stringFields);
                 break;
@@ -74,7 +79,61 @@ class Reader
 
     ///// initialization
 
+    private function openWdb2() {
+        fseek($this->fileHandle, 4);
+        $parts = array_values(unpack('V11x',fread($this->fileHandle, 4 * 11)));
+
+        $this->recordCount      = $parts[0];
+        $this->fieldCount       = $parts[1];
+        $this->recordSize       = $parts[2];
+        $this->stringBlockSize  = $parts[3];
+        $this->hash             = $parts[4];
+        $this->build            = $parts[5];
+        // timestamp
+        $this->minId            = $parts[7];
+        $this->maxId            = $parts[8];
+        $this->locale           = $parts[9];
+        $this->copyBlockSize    = $parts[10];
+
+        $this->headerSize = 48;
+
+        $this->hasEmbeddedStrings = false;
+
+        $this->hasIdBlock = $this->maxId > 0;
+        $this->idBlockPos = $this->headerSize;
+
+        if ($this->hasIdBlock) {
+            $this->headerSize += 6 * ($this->maxId - $this->minId + 1);
+        }
+
+        $this->stringBlockPos = $this->headerSize + ($this->recordCount * $this->recordSize);
+        $this->copyBlockPos = $this->stringBlockPos + $this->stringBlockSize;
+
+        $eof = $this->copyBlockPos + $this->copyBlockSize;
+        if ($eof != $this->fileSize) {
+            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+        }
+
+        $this->recordFormat = [];
+        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+            $this->recordFormat[$fieldId] = [
+                'bitShift' => 0,
+                'offset' => $fieldId * 4,
+                'valueLength' => 4,
+                'valueCount' => 1,
+                'type' => static::FIELD_TYPE_UNKNOWN,
+                'signed' => true,
+            ] ;
+        }
+
+        $this->idField = 0;
+
+        $this->populateIdMap();
+        $this->guessFieldTypes();
+    }
+
     private function openWdb5($stringFields) {
+        fseek($this->fileHandle, 4);
         $parts = array_values(unpack('V10x/v2y',fread($this->fileHandle, 4 * 11)));
 
         $this->recordCount      = $parts[0];
@@ -115,10 +174,7 @@ class Reader
         }
         $this->idBlockPos = $this->stringBlockPos + $this->stringBlockSize;
 
-        $this->copyBlockPos = $this->idBlockPos + $this->recordCount * 4;
-        if (!$this->hasIdBlock) {
-            $this->copyBlockPos = $this->idBlockPos;
-        }
+        $this->copyBlockPos = $this->idBlockPos + ($this->hasIdBlock ? $this->recordCount * 4 : 0);
 
         $eof = $this->copyBlockPos + $this->copyBlockSize;
         if ($eof != $this->fileSize) {
@@ -174,6 +230,7 @@ class Reader
             $couldBeFloat = true;
             $couldBeString = !$this->hasEmbeddedStrings;
             $recordOffset = 0;
+            $distinctValues = [];
             while (($couldBeString || $couldBeFloat) && $recordOffset < $this->recordCount) {
                 $data = $this->getRawRecord($recordOffset);
                 if (!$this->hasEmbeddedStrings) {
@@ -200,6 +257,9 @@ class Reader
                 foreach ($values as $value) {
                     if ($value == 0) {
                         continue; // can't do much with this
+                    }
+                    if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
+                        $distinctValues[$value] = true;
                     }
                     if ($couldBeString) {
                         if ($value > $this->stringBlockSize) {
@@ -228,7 +288,7 @@ class Reader
                 $recordOffset++;
             }
 
-            if ($couldBeString) {
+            if ($couldBeString && ($this->recordCount < static::DISTINCT_STRINGS_REQUIRED * 2 || count($distinctValues) >= static::DISTINCT_STRINGS_REQUIRED)) {
                 $format['type'] = static::FIELD_TYPE_STRING;
                 $format['signed'] = false;
             } elseif ($couldBeFloat) {
@@ -251,8 +311,17 @@ class Reader
             }
         } else {
             fseek($this->fileHandle, $this->idBlockPos);
-            for ($x = 0; $x < $this->recordCount; $x++) {
-                $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $x;
+            if ($this->fileFormat == 'WDB2') {
+                for ($x = $this->minId; $x <= $this->maxId; $x++) {
+                    $record = current(unpack('V', fread($this->fileHandle, 4)));
+                    if ($record) {
+                        $this->idMap[$x] = $record - 1;
+                    }
+                }
+            } else {
+                for ($x = 0; $x < $this->recordCount; $x++) {
+                    $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $x;
+                }
             }
         }
 

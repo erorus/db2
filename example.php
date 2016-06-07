@@ -11,6 +11,12 @@ if (isset($argv[1])) {
 }
 
 $reader = new Reader($path);
+if (isset($argv[2])) {
+    $fields = explode(',', $argv[2]);
+    foreach ($fields as $field) {
+        $reader->setFieldsSigned([$field => true]);
+    }
+}
 
 $recordNum = 0;
 foreach ($reader->generateRecords() as $id => $record) {

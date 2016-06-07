@@ -22,11 +22,11 @@ All integers are assumed to be unsigned, but you can use `setFieldsSigned([2 => 
 
 ## Compatibility
 
-Currently it works only with the WDB5 format, which is currently used in the Legion beta. It should work reasonably well for most DB2 files already, with support for embedded IDs, ID blocks, the copy block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
+Currently it works best with the WDB5 format, which is used in the Legion beta. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
 
-Warlords of Draenor (and prior versions) uses WDB2, which is not compatible with this library. Support for WDB2 might be added later.
+Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format, which is also compatible with this library. Support for WDB2 is not as robust, as there are fewer clues regarding field types.
 
-Legion already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
+Legion alpha already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
 
 ## Goals
 
@@ -35,8 +35,6 @@ This will eventually be used for The Undermine Journal (Newsstand) to datamine i
 I'm also separating this from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc. Eventually.
 
 ## Disclaimers
-
-The interfaces and class structures are not finalized yet, and they may change during development.
 
 This work is neither endorsed by nor affiliated with Blizzard Entertainment.
 

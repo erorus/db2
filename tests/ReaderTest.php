@@ -231,6 +231,8 @@ class ReaderTest extends phpunit\framework\TestCase
     {
         $reader = new Reader(static::WDB5_PATH.'/FieldTypes.db2');
 
+        $reader->setFieldsSigned([false,false,false,false]);
+
         $rec = $reader->getRecord(100);
         $this->assertEquals(10,         $rec[0]); // 1-byte
         $this->assertEquals(2000,       $rec[1]); // 2-byte
