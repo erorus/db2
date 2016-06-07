@@ -304,6 +304,7 @@ class Reader
     private function populateIdMap() {
         $this->idMap = [];
         if (!$this->hasIdBlock) {
+            $this->recordFormat[$this->idField]['signed'] = false; // in case it's a 32-bit int
             $fieldFormat = $this->recordFormat[$this->idField];
             for ($x = 0; $x < $this->recordCount; $x++) {
                 fseek($this->fileHandle, $this->headerSize + $x * $this->recordSize + $fieldFormat['offset']);
