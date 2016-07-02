@@ -62,6 +62,9 @@ class Reader
         $this->fileSize = $fstat['size'];
         $this->fileFormat = fread($this->fileHandle, 4);
         switch ($this->fileFormat) {
+            case 'WDBC':
+                $this->openWdb2(true);
+                break;
             case 'WDB2':
                 $this->openWdb2();
                 break;
@@ -79,23 +82,24 @@ class Reader
 
     ///// initialization
 
-    private function openWdb2() {
+    private function openWdb2($wdbc = false) {
         fseek($this->fileHandle, 4);
-        $parts = array_values(unpack('V11x',fread($this->fileHandle, 4 * 11)));
+        $headerFieldCount = $wdbc ? 4 : 11;
+        $parts = array_values(unpack('V'.$headerFieldCount.'x',fread($this->fileHandle, 4 * $headerFieldCount)));
 
         $this->recordCount      = $parts[0];
         $this->fieldCount       = $parts[1];
         $this->recordSize       = $parts[2];
         $this->stringBlockSize  = $parts[3];
-        $this->hash             = $parts[4];
-        $this->build            = $parts[5];
+        $this->hash             = $wdbc ? 0 : $parts[4];
+        $this->build            = $wdbc ? 0 : $parts[5];
         // timestamp
-        $this->minId            = $parts[7];
-        $this->maxId            = $parts[8];
-        $this->locale           = $parts[9];
-        $this->copyBlockSize    = $parts[10];
+        $this->minId            = $wdbc ? 0 : $parts[7];
+        $this->maxId            = $wdbc ? 0 : $parts[8];
+        $this->locale           = $wdbc ? 0 : $parts[9];
+        $this->copyBlockSize    = $wdbc ? 0 : $parts[10];
 
-        $this->headerSize = 48;
+        $this->headerSize = 4 * ($headerFieldCount + 1);
 
         $this->hasEmbeddedStrings = false;
 
