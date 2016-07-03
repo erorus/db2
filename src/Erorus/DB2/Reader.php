@@ -553,6 +553,17 @@ class Reader
         return $namedFields;
     }
 
+    public function getFieldTypes($byName = true) {
+        $fieldTypes = [];
+        foreach ($this->recordFormat as $fieldId => $format) {
+            if ($byName && isset($format['name'])) {
+                $fieldId = $format['name'];
+            }
+            $fieldTypes[$fieldId] = $format['type'];
+        }
+        return $fieldTypes;
+    }
+
     // static utils
 
     public static function flattenRecord(Array $record) {
