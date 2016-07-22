@@ -202,7 +202,13 @@ class Reader
         }
 
         $fieldId = $this->fieldCount - 1;
-        $this->recordFormat[$fieldId]['valueCount'] = 1; //  floor(($this->recordSize - $this->recordFormat[$fieldId]['offset']) / $this->recordFormat[$fieldId]['valueLength']);
+        $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
+        $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
+        if ($this->recordSize % 4 == 0                          // records may be padded to word length (probably all files have records that would)
+            && $this->recordFormat[$fieldId]['valueCount'] > 1  // and we're guessing the last column is an array
+            && $remainingBytes <= 4) {                          // and the last field size <= word size
+            $this->recordFormat[$fieldId]['valueCount'] = 1;    // assume the last field is scalar, and the remaining bytes are just padding
+        }
 
         if (!$this->hasIdBlock) {
             if ($this->idField >= $this->fieldCount) {
