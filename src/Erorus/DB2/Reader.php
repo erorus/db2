@@ -5,7 +5,8 @@ namespace Erorus\DB2;
 class Reader
 {
     const EMBEDDED_STRING_FIELDS = [
-        'item-sparse.db2' => [13,14,15,16,17],
+        0xEFBEADDE => [2], // tests/wdb5/EmbedStrings.db2
+        0x27909DB0 => [13,14,15,16,17], // item-sparse.db2 as of 7.0.3.22522 and earlier
     ];
 
     const FIELD_TYPE_UNKNOWN = 0;
@@ -25,7 +26,8 @@ class Reader
     private $fieldCount = 0;
     private $recordSize = 0;
     private $stringBlockSize = 0;
-    private $hash = 0;
+    private $tableHash = 0;
+    private $layoutHash = 0;
     private $build = 0;
     private $minId = 0;
     private $maxId = 0;
@@ -91,7 +93,7 @@ class Reader
         $this->fieldCount       = $parts[1];
         $this->recordSize       = $parts[2];
         $this->stringBlockSize  = $parts[3];
-        $this->hash             = $wdbc ? 0 : $parts[4];
+        $this->tableHash        = $wdbc ? 0 : $parts[4];
         $this->build            = $wdbc ? 0 : $parts[5];
         // timestamp
         $this->minId            = $wdbc ? 0 : $parts[7];
@@ -144,8 +146,8 @@ class Reader
         $this->fieldCount       = $parts[1];
         $this->recordSize       = $parts[2];
         $this->stringBlockSize  = $parts[3];
-        $this->hash             = $parts[4];
-        $this->build            = $parts[5];
+        $this->tableHash        = $parts[4];
+        $this->layoutHash       = $parts[5];
         $this->minId            = $parts[6];
         $this->maxId            = $parts[7];
         $this->locale           = $parts[8];
@@ -167,8 +169,8 @@ class Reader
             $this->stringBlockSize = 0;
 
             if (is_null($stringFields)) {
-                if (array_key_exists($this->fileName, static::EMBEDDED_STRING_FIELDS)) {
-                    $stringFields = static::EMBEDDED_STRING_FIELDS[$this->fileName];
+                if (array_key_exists($this->layoutHash, static::EMBEDDED_STRING_FIELDS)) {
+                    $stringFields = static::EMBEDDED_STRING_FIELDS[$this->layoutHash];
                 } else {
                     throw new \Exception($this->fileName." has embedded strings, but string fields were not supplied during instantiation");
                 }
