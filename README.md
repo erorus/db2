@@ -1,38 +1,65 @@
 # DB2 Reader
 
-This is a small library to read DB2 files (data tables) from World of Warcraft.
+This is a small library to read DB2 and ADB files (data tables) from World of Warcraft.
 
 ## Installation
 
-Just copy the class files into your project and include them where you want to use them. Eventually I want to make it compatible with Composer, but that's not done yet.
-
-**Note:** The interfaces and class structures are not finalized yet, and they may change during development.
+Just copy the class file into your project and include it where you want to use it. Eventually I want to make this compatible with Composer, but that's not done yet.
 
 ## Usage
 
-Check out the example.php, which is what I'm using during development.
-* Instantiate an object with the path to a DB2 file. `$reader = new Reader("Achievement.db2");`
-* Records are presented as simple arrays. Some fields are, themselves, arrays of values. Get individual records by ID with `$reader->getRecord(17)`
-* You can loop through all available records with `foreach ($reader->generateRecords() as $id => $record)`
-* There's a list of all IDs in the file at `$reader->getIds()`
+```php
+// Instantiate an object with the path to a DB2 file.
+$db2Reader = new Reader("Achievement.db2"); 
+ 
+// Records are presented as simple arrays.
+// Some fields are, themselves, arrays of values.
+// Get individual records by ID with:
+$record = $db2Reader->getRecord(17);
+ 
+// Loop through records with:
+foreach ($db2Reader->generateRecords() as $id => $record) { ... }
+ 
+// All valid record IDs:
+$ids = $db2Reader->getIds();
+ 
+// You can set field names for convenience:
+$db2Reader->setFieldNames([0 => "name", 1 => "note", ...]);
+$record = $db2Reader->getRecord(17);
+if ($record['name'] == "...") ...
+ 
+// All integers are assumed to be unsigned, but you can change that by field:
+$db2Reader->setFieldsSigned([2 => true, 7 => true]);
+$record = $db2Reader->getRecord(17);
+if ($record[2] < 0) ...
+ 
+// You can get the calculated field types, 
+// useful when dynamically creating database tables:
+$types = $db2Reader->getFieldTypes();
+if ($types['name'] == Reader::FIELD_TYPE_STRING) ...
+ 
+// Finally, you can load an ADB, as long as you have its parent DB2.
+// The ADB reader will only expose records in the ADB file
+$adbReader = $db2Reader->loadAdb("Achievement.adb");
+```
 
-You can also set field names with `setFieldNames([0 => "name", 1 => "note", ...])` if you don't want to keep track of the field IDs.
-
-All integers are assumed to be unsigned, but you can use `setFieldsSigned([2 => true, 7 => true, ...])` to permit negative values.
+Also check out example.php, which is what I'm using during development.
 
 ## Compatibility
 
-Currently it works best with the WDB5 format, which is used in the Legion beta. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
+Works best with the WDB5 format, which is used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
 
 Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format, which is also compatible with this library. Support for WDB2 is not as robust, as there are fewer clues regarding field types.
 
 Legion alpha already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
 
+ADB support is limited to WCH7, currently used in Legion. ADBs require their counterpart DB2 file for the necessary formatting.
+
 ## Goals
 
-This will eventually be used for The Undermine Journal (Newsstand) to datamine items, pets, and other entities for Legion.
+This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/newsstand/)) to datamine items, pets, and other entities.
 
-I'm also separating this from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc. Eventually.
+This is separate from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc. Eventually.
 
 ## Disclaimers
 
@@ -48,7 +75,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use these files except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+  http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,

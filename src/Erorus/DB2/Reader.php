@@ -28,6 +28,7 @@ class Reader
     private $stringBlockSize = 0;
     private $tableHash = 0;
     private $layoutHash = 0;
+    private $timestamp = 0;
     private $build = 0;
     private $minId = 0;
     private $maxId = 0;
@@ -38,6 +39,7 @@ class Reader
 
     private $hasEmbeddedStrings = false;
     private $hasIdBlock = false;
+    private $hasIdsInIndexBlock = false;
 
     private $stringBlockPos = 0;
     private $indexBlockPos = 0;
@@ -49,7 +51,7 @@ class Reader
     private $idMap = [];
     private $recordOffsets = null;
 
-    function __construct($db2path, $stringFields = null) {
+    function __construct($db2path, $arg = null) {
         if (is_string($db2path)) {
             $this->fileHandle = @fopen($db2path, 'rb');
             if ($this->fileHandle === false) {
@@ -63,18 +65,29 @@ class Reader
         $fstat = fstat($this->fileHandle);
         $this->fileSize = $fstat['size'];
         $this->fileFormat = fread($this->fileHandle, 4);
-        switch ($this->fileFormat) {
-            case 'WDBC':
-                $this->openWdb2(true);
-                break;
-            case 'WDB2':
-                $this->openWdb2();
-                break;
-            case 'WDB5':
-                $this->openWdb5($stringFields);
-                break;
-            default:
-                throw new \Exception("Unknown format: ".$this->fileFormat);
+        if (is_a($arg, Reader::class)) {
+            switch ($this->fileFormat) {
+                case 'WCH7':
+                    $this->openWch7($arg);
+                    break;
+                default:
+                    throw new \Exception("Unknown ADB format: ".$this->fileFormat);
+            }
+        } else {
+            switch ($this->fileFormat) {
+                case 'WDBC':
+                case 'WDB2':
+                    $this->openWdb2();
+                    break;
+                case 'WDB5':
+                    if (!is_null($arg) && !is_array($arg)) {
+                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                    }
+                    $this->openWdb5($arg);
+                    break;
+                default:
+                    throw new \Exception("Unknown DB2 format: ".$this->fileFormat);
+            }
         }
     }
 
@@ -84,8 +97,9 @@ class Reader
 
     ///// initialization
 
-    private function openWdb2($wdbc = false) {
+    private function openWdb2() {
         fseek($this->fileHandle, 4);
+        $wdbc = $this->fileFormat == 'WDBC';
         $headerFieldCount = $wdbc ? 4 : 11;
         $parts = array_values(unpack('V'.$headerFieldCount.'x',fread($this->fileHandle, 4 * $headerFieldCount)));
 
@@ -95,7 +109,7 @@ class Reader
         $this->stringBlockSize  = $parts[3];
         $this->tableHash        = $wdbc ? 0 : $parts[4];
         $this->build            = $wdbc ? 0 : $parts[5];
-        // timestamp
+        $this->timestamp        = $wdbc ? 0 : $parts[6];
         $this->minId            = $wdbc ? 0 : $parts[7];
         $this->maxId            = $wdbc ? 0 : $parts[8];
         $this->locale           = $wdbc ? 0 : $parts[9];
@@ -233,6 +247,71 @@ class Reader
         $this->guessFieldTypes();
     }
 
+    private function openWch7(Reader $sourceReader) {
+        fseek($this->fileHandle, 4);
+        $parts = array_values(unpack('V12x',fread($this->fileHandle, 4 * 12)));
+
+        $this->recordCount      = $parts[0];
+        $unkTableSize           = $parts[1];
+        $this->fieldCount       = $parts[2];
+        $this->recordSize       = $parts[3];
+        $this->stringBlockSize  = $parts[4];
+        $this->tableHash        = $parts[5];
+        $this->layoutHash       = $parts[6];
+        $this->build            = $parts[7];
+        $this->timestamp        = $parts[8];
+        $this->minId            = $parts[9];
+        $this->maxId            = $parts[10];
+        $this->locale           = $parts[11];
+        $this->copyBlockSize    = 0;
+        $this->flags            = $sourceReader->flags;
+        $this->idField          = $sourceReader->idField;
+
+        $this->headerSize = 52;
+
+        $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
+        $this->hasIdBlock = ($this->flags & 4) > 0;
+
+        foreach (['tableHash', 'layoutHash', 'fieldCount'] as $headerField) {
+            if ($this->$headerField != $sourceReader->$headerField) {
+                throw new \Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
+            }
+        }
+        if (($sourceReader->locale & $this->locale) != $this->locale) {
+            $headerField = 'locale';
+            throw new \Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
+        }
+
+        if ($this->hasEmbeddedStrings) {
+            // this could get messy
+            $this->hasIdsInIndexBlock = true;
+            $this->hasIdBlock = !$this->hasIdsInIndexBlock;
+
+            $this->indexBlockPos = $this->headerSize + $this->stringBlockSize; // stringBlockSize is really just the offset after the header to the index block
+
+            $this->stringBlockPos = $this->idBlockPos = $this->fileSize;
+            $this->stringBlockSize = 0;
+        } else {
+            $this->stringBlockPos = $this->headerSize + ($this->recordCount * $this->recordSize);
+            $this->idBlockPos = $unkTableSize * 4 + $this->stringBlockPos + $this->stringBlockSize;
+        }
+
+        $this->copyBlockPos = $this->idBlockPos + ($this->hasIdBlock ? $this->recordCount * 4 : 0);
+
+        $eof = $this->copyBlockPos + $this->copyBlockSize;
+        if ($eof != $this->fileSize) {
+            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+        }
+
+        $this->recordFormat = $sourceReader->recordFormat;
+
+        if ($this->hasEmbeddedStrings) {
+            $this->populateRecordOffsets(); // also populates idMap
+        } else {
+            $this->populateIdMap();
+        }
+    }
+
     private function guessFieldTypes() {
         foreach ($this->recordFormat as $fieldId => &$format) {
             if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['valueLength'] != 4) {
@@ -358,36 +437,50 @@ class Reader
 
         fseek($this->fileHandle, $this->indexBlockPos);
         $this->recordOffsets = [];
-        $indexBlockOffset = 0;
+        if ($this->hasIdsInIndexBlock) {
+            $this->idMap = [];
+            $lowerBound = 0;
+            $upperBound = $this->recordCount - 1;
+        } else {
+            $lowerBound = $this->minId;
+            $upperBound = $this->maxId;
+        }
         $seenBefore = [];
-        for ($x = $this->minId; $x <= $this->maxId; $x++) {
-            $bytes = fread($this->fileHandle, 6);
-            $pointer = unpack('Vpos/vsize', $bytes);
+        for ($x = $lowerBound; $x <= $upperBound; $x++) {
+            if ($this->hasIdsInIndexBlock) {
+                $bytes = fread($this->fileHandle, 10);
+                $pointer = unpack('Vid/Vpos/vsize', $bytes);
+                $bytes = substr($bytes, 4); // crop off ID in front to match other case
+                $this->idMap[$pointer['id']] = $x;
+            } else {
+                $bytes = fread($this->fileHandle, 6);
+                $pointer = unpack('Vpos/vsize', $bytes);
+                $pointer['id'] = $x;
+            }
             if ($pointer['size'] > 0) {
                 if (!isset($seenBefore[$pointer['pos']])) {
                     $seenBefore[$pointer['pos']] = [];
                 }
-                if (!isset($this->idMap[$x])) {
-                    //echo "Found {$pointer['pos']} x {$pointer['size']} in index block for id $x which isn't in id block\n";
+                if (!isset($this->idMap[$pointer['id']])) {
+                    //echo "Found {$pointer['pos']} x {$pointer['size']} in index block for $pointer['id'] which isn't in id block\n";
                     foreach ($seenBefore[$pointer['pos']] as $anotherId) {
                         if (isset($this->idMap[$anotherId])) {
-                            //echo "Mapping $x to match previously seen $anotherId\n";
-                            $this->idMap[$x] = $this->idMap[$anotherId];
+                            //echo "Mapping $pointer['id'] to match previously seen $anotherId\n";
+                            $this->idMap[$pointer['id']] = $this->idMap[$anotherId];
                         }
                     }
                 }
-                if (isset($this->idMap[$x])) {
-                    $this->recordOffsets[$this->idMap[$x]] = $bytes;
+                if (isset($this->idMap[$pointer['id']])) {
+                    $this->recordOffsets[$this->idMap[$pointer['id']]] = $bytes;
                     foreach ($seenBefore[$pointer['pos']] as $anotherId) {
                         if (!isset($this->idMap[$anotherId])) {
-                            //echo "Mapping previously seen $anotherId to match $x\n";
-                            $this->idMap[$anotherId] = $this->idMap[$x];
+                            //echo "Mapping previously seen $anotherId to match $pointer['id']\n";
+                            $this->idMap[$anotherId] = $this->idMap[$pointer['id']];
                         }
                     }
                 }
-                $seenBefore[$pointer['pos']][] = $x;
+                $seenBefore[$pointer['pos']][] = $pointer['id'];
             }
-            $indexBlockOffset += 6;
         }
 
         ksort($this->idMap);
@@ -511,6 +604,21 @@ class Reader
         }
     }
 
+    public function getFieldTypes($byName = true) {
+        $fieldTypes = [];
+        foreach ($this->recordFormat as $fieldId => $format) {
+            if ($byName && isset($format['name'])) {
+                $fieldId = $format['name'];
+            }
+            $fieldTypes[$fieldId] = $format['type'];
+        }
+        return $fieldTypes;
+    }
+
+    public function loadAdb($adbPath) {
+        return new Reader($adbPath, $this);
+    }
+
     // user preferences
 
     public function setFieldsSigned(Array $fields) {
@@ -559,17 +667,6 @@ class Reader
             }
         }
         return $namedFields;
-    }
-
-    public function getFieldTypes($byName = true) {
-        $fieldTypes = [];
-        foreach ($this->recordFormat as $fieldId => $format) {
-            if ($byName && isset($format['name'])) {
-                $fieldId = $format['name'];
-            }
-            $fieldTypes[$fieldId] = $format['type'];
-        }
-        return $fieldTypes;
     }
 
     // static utils

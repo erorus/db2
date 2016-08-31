@@ -36,7 +36,7 @@ class ReaderTest extends phpunit\framework\TestCase
             $reader = new Reader(static::WDB5_PATH.'/BadFormat.db2');
             $this->fail("Did not throw exception on unknown file format");
         } catch (Exception $e) {
-            $this->assertEquals("Unknown format: $format", $e->getMessage());
+            $this->assertEquals("Unknown DB2 format: $format", $e->getMessage());
         }
     }
 
@@ -458,5 +458,127 @@ class ReaderTest extends phpunit\framework\TestCase
             $this->assertEquals("Copy block referenced ID 10066329 which does not exist", $e->getMessage());
         }
     }
+
+    public function testInvalidStringFields()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/EmbedStrings.db2', 'invalid');
+            $this->fail("No exception raised during construction with bad string fields argument");
+        } catch (Exception $e) {
+            $this->assertEquals("You may only pass an array of string fields when loading a DB2", $e->getMessage());
+        }
+    }
+
+    public function testLastFieldNotArray()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/LastFieldNotArray.db2');
+        $this->assertEquals([16,1], $reader->getRecord(16));
+    }
+
+    public function testAdbOpen()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
+        $adbViaConstructor = new Reader(static::WDB5_PATH . '/IdBlock.adb', $db2);
+        $this->assertEquals([96], $adbViaConstructor->getRecord(150));
+
+        $adbViaMethod = $db2->loadAdb(static::WDB5_PATH . '/IdBlock.adb');
+        $this->assertEquals([96], $adbViaMethod->getRecord(150));
+    }
+
+    public function testAdbInvalidConstructor()
+    {
+        try {
+            $reader = new Reader(static::WDB5_PATH . '/IdBlock.adb');
+            $this->fail("No exception raised trying to open an ADB without a DB2");
+        } catch (Exception $e) {
+            $this->assertEquals("Unknown DB2 format: WCH7", $e->getMessage());
+        }
+    }
+
+    public function testDb2IsNotAdb()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
+        try {
+            $adbViaConstructor = new Reader(static::WDB5_PATH . '/IdBlock.db2', $db2);
+            $this->fail("No exception raised trying to open an DB2 as an ADB via Constructor");
+        } catch (Exception $e) {
+            $this->assertEquals("Unknown ADB format: WDB5", $e->getMessage());
+        }
+
+        try {
+            $adbViaMethod = $db2->loadAdb(static::WDB5_PATH . '/IdBlock.db2');
+            $this->fail("No exception raised trying to open an DB2 as an ADB via Method");
+        } catch (Exception $e) {
+            $this->assertEquals("Unknown ADB format: WDB5", $e->getMessage());
+        }
+    }
+
+    public function testBadAdbLength()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
+        try {
+            $adb = new Reader(static::WDB5_PATH . '/BadLength.adb', $db2);
+            $this->fail("No exception raised with a truncated ADB file");
+        } catch (Exception $e) {
+            $this->assertEquals("Expected size: 1329, actual size: 59", $e->getMessage());
+        }
+    }
+
+    public function testAdbWithEmbeddedStrings()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
+        $adb = new Reader(static::WDB5_PATH . '/EmbedStrings.adb', $db2);
+        $this->assertEquals([54321,987654321,'Amended',77777], $adb->getRecord(150));
+        $this->assertEquals([1221,123321,'ADB',321123], $adb->getRecord(175));
+    }
+
+    public function testAdbLocaleMismatch()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
+        try {
+            $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongLocale.adb', $db2);
+            $this->fail("No exception raised with the wrong locale in the ADB file");
+        } catch (Exception $e) {
+            $this->assertEquals("locale of embedstringswronglocale.adb (2) does not match locale of embedstrings.db2 (1)", $e->getMessage());
+        }
+    }
+
+    public function testAdbHashMismatch()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
+        try {
+            $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongHash.adb', $db2);
+            $this->fail("No exception raised with the wrong locale in the ADB file");
+        } catch (Exception $e) {
+            $this->assertEquals("layoutHash of embedstringswronghash.adb (2913643194) does not match layoutHash of embedstrings.db2 (4022250974)", $e->getMessage());
+        }
+    }
+
+    public function testGetFieldTypes()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/Arrays.db2');
+        $db2->setFieldNames(['byte','short','triple','long','float','string','id']);
+        $fieldByName = [
+            'byte'   => Reader::FIELD_TYPE_INT,
+            'short'  => Reader::FIELD_TYPE_INT,
+            'triple' => Reader::FIELD_TYPE_INT,
+            'long'   => Reader::FIELD_TYPE_INT,
+            'float'  => Reader::FIELD_TYPE_FLOAT,
+            'string' => Reader::FIELD_TYPE_STRING,
+            'id'     => Reader::FIELD_TYPE_INT,
+        ];
+        $this->assertEquals($fieldByName, $db2->getFieldTypes());
+        $this->assertEquals($fieldByName, $db2->getFieldTypes(true));
+        $this->assertEquals([
+                Reader::FIELD_TYPE_INT,
+                Reader::FIELD_TYPE_INT,
+                Reader::FIELD_TYPE_INT,
+                Reader::FIELD_TYPE_INT,
+                Reader::FIELD_TYPE_FLOAT,
+                Reader::FIELD_TYPE_STRING,
+                Reader::FIELD_TYPE_INT,
+            ], $db2->getFieldTypes(false));
+    }
+
 }
 
