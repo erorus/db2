@@ -53,7 +53,7 @@ Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format,
 
 Legion alpha already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
 
-ADB support is limited to WCH7, currently used in Legion. ADBs require their counterpart DB2 file for the necessary formatting.
+ADB support is limited to WCH8, currently used in Legion. ADBs require their counterpart DB2 file for the necessary formatting.
 
 ## Goals
 

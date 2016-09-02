@@ -68,6 +68,7 @@ class Reader
         if (is_a($arg, Reader::class)) {
             switch ($this->fileFormat) {
                 case 'WCH7':
+                case 'WCH8':
                     $this->openWch7($arg);
                     break;
                 default:
