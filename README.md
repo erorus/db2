@@ -67,6 +67,10 @@ This work is neither endorsed by nor affiliated with Blizzard Entertainment.
 
 This work is developed with no involvement of ZAM Network, which is my current employer.
 
+## Thanks
+
+Most of the file format details were found by documentation at [the WoWDev wiki](https://wowdev.wiki/DB2). Thanks to those who contribute there!
+
 ## License
 
 Copyright 2016 Gerard Dombroski
