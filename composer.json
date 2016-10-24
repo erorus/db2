@@ -1,0 +1,23 @@
+{
+    "name":        "erorus/db2",
+    "description": "This is a small library to read DB2 and ADB files (data tables) from World of Warcraft.",
+    "license":     "Apache-2.0",
+    "require-dev": {
+        "phpunit/phpunit": "5.*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Erorus\\DB2\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "": "test/"
+        }
+    },
+    "archive": {
+        "exclude": [
+            "/test"
+        ]
+    }
+}
