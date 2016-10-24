@@ -4,7 +4,23 @@ This is a small library to read DB2 and ADB files (data tables) from World of Wa
 
 ## Installation
 
-Just copy the class file into your project and include it where you want to use it. Eventually I want to make this compatible with Composer, but that's not done yet.
+Just copy the class file into your project and include it where you want to use it.
+
+#### Install with [Composer](https://getcomposer.org/)
+
+Run composer from your project directory:
+```sh
+$ composer.phar require erorus/db2
+```
+
+Or add it manually to your composer.json file:
+```json
+{
+    "require" : {
+        "erorus/db2": "*"
+    }
+}
+```
 
 ## Usage
 

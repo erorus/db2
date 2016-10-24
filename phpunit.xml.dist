@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+    colors                        = "true"
+    bootstrap                     = "vendor/autoload.php"
+    xmlns:xsi                     = "http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation = "http://schema.phpunit.de/4.4/phpunit.xsd">
+
+    <testsuites>
+        <testsuite name="erorus/db2 test suite">
+            <directory>./tests</directory>
+        </testsuite>
+    </testsuites>
+    <filter>
+        <whitelist>
+            <directory>src</directory>
+        </whitelist>
+    </filter>
+</phpunit>

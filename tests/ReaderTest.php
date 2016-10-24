@@ -1,43 +1,36 @@
 <?php
-
 use Erorus\DB2\Reader;
 
-class ReaderTest extends phpunit\framework\TestCase
+class ReaderTest extends \PHPUnit\Framework\TestCase
 {
     const WDB5_PATH = __DIR__.'/wdb5';
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Must supply path to DB2 file
+     */
     public function testInvalidDB2Param()
     {
-        try {
-            $reader = new Reader(0);
-            $this->fail("Did not throw exception on invalid db2 param");
-        } catch (Exception $e) {
-            $this->assertEquals("Must supply path to DB2 file", $e->getMessage());
-        }
+        new Reader(0);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Error opening /dev/null/notfound.db2 for reading.
+     */
     public function testMissingFile()
     {
-        $db2path = '/dev/null/notfound.db2';
-
-        try {
-            $reader = new Reader($db2path);
-            $this->fail("Did not throw exception on missing file");
-        } catch (Exception $e) {
-            $this->assertEquals("Error opening $db2path", $e->getMessage());
-        }
+        new Reader('/dev/null/notfound.db2');
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Unknown DB2 format: XXXX in file badformat.db2.
+     */
     public function testInvalidFileFormat()
     {
-        $format = substr(file_get_contents(static::WDB5_PATH.'/BadFormat.db2'), 0, 4);
-
-        try {
-            $reader = new Reader(static::WDB5_PATH.'/BadFormat.db2');
-            $this->fail("Did not throw exception on unknown file format");
-        } catch (Exception $e) {
-            $this->assertEquals("Unknown DB2 format: $format", $e->getMessage());
-        }
+        $file = static::WDB5_PATH.'/BadFormat.db2';
+        new Reader($file);
     }
 
     public function testWDB5FormatLoad()
@@ -46,24 +39,22 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(1, $reader->getFieldCount());
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Expected size: 59, actual size: 68
+     */
     public function testFileTooLong()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH.'/TooLong.db2');
-            $this->fail("Did not notice db2 file was too long");
-        } catch (Exception $e) {
-            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/TooLong.db2').'$/', $e->getMessage());
-        }
+       new Reader(static::WDB5_PATH.'/TooLong.db2');
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Expected size: 374, actual size: 64
+     */
     public function testFileTooShort()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH.'/TooShort.db2');
-            $this->fail("Did not notice db2 file was too short");
-        } catch (Exception $e) {
-            $this->assertRegExp('/^Expected size: \d+, actual size: '.filesize(static::WDB5_PATH.'/TooShort.db2').'$/', $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH.'/TooShort.db2');
     }
 
     public function testLoadRecordFromIDBlock()
@@ -90,16 +81,14 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(200, $rec[0]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Field ID 1 out of bounds: 0-0
+     */
     public function testSignedFieldOutOfBounds()
     {
         $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-
-        try {
-            $reader->setFieldsSigned([false, true]);
-            $this->fail("Did not flag field 1 as out of bounds");
-        } catch (Exception $e) {
-            $this->assertEquals("Field ID 1 out of bounds: 0-0", $e->getMessage());
-        }
+        $reader->setFieldsSigned([false, true]);
     }
 
     public function testFieldNames()
@@ -119,40 +108,34 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(200, $rec[0]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Field ID abc must be numeric
+     */
     public function testFieldNameInvalidIndex()
     {
         $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-
-        try {
-            $reader->setFieldNames(['abc' => 'abc']);
-            $this->fail("Did not flag field 'abc' as invalid");
-        } catch (Exception $e) {
-            $this->assertEquals("Field ID abc must be numeric", $e->getMessage());
-        }
+        $reader->setFieldNames(['abc' => 'abc']);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Field 0 Name (99) must NOT be numeric
+     */
     public function testFieldNameNumeric()
     {
         $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-
-        try {
-            $reader->setFieldNames([99]);
-            $this->fail("Did not flag field name 99 as numeric");
-        } catch (Exception $e) {
-            $this->assertEquals("Field 0 Name (99) must NOT be numeric", $e->getMessage());
-        }
+        $reader->setFieldNames([99]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Field ID 99 out of bounds: 0-0
+     */
     public function testFieldOutOfBounds()
     {
         $reader = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-
-        try {
-            $reader->setFieldNames([99=>'test']);
-            $this->fail("Did not flag field 99 as out of bounds");
-        } catch (Exception $e) {
-            $this->assertEquals("Field ID 99 out of bounds: 0-0", $e->getMessage());
-        }
+        $reader->setFieldNames([99=>'test']);
     }
 
     public function testUnknownRecordID()
@@ -199,14 +182,13 @@ class ReaderTest extends phpunit\framework\TestCase
         }
     }
 
+    /**
+     * @expectedException \TypeError
+     * @expectedExceptionMessage must be of the type array, string given
+     */
     public function testFlattenString()
     {
-        try {
-            $result = Reader::flattenRecord("abc");
-            $this->fail("Returned something when trying to flatten string abc");
-        } catch (TypeError $e) {
-            $this->assertFalse(strpos($e->getMessage(), 'must be of the type array, string given') === false);
-        }
+        Reader::flattenRecord("abc");
     }
 
     public function testFlattenNormalRecord()
@@ -372,14 +354,13 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(200,        $rec[6]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage embedstringswithoutidblock.db2 has embedded strings and no ID block, which was not expected, aborting
+     */
     public function testEmbedStringsWithoutIdBlock()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsWithoutIdBlock.db2');
-            $this->fail("No exception raised with file with embedded strings without id block");
-        } catch (Exception $e) {
-            $this->assertEquals("File has embedded strings and no ID block, which was not expected, aborting", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStringsWithoutIdBlock.db2');
     }
 
     public function testEmbedStrings()
@@ -403,14 +384,13 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals($rec, $reader->getRecord(102)); // 102 just points to 103's data in index block
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage embedstringsunknownhash.db2 has embedded strings, but string fields were not supplied during instantiation
+     */
     public function testUnknownEmbedStrings()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsUnknownHash.db2');
-            $this->fail("No exception raised with file with unknown embedded strings file");
-        } catch (Exception $e) {
-            $this->assertEquals("embedstringsunknownhash.db2 has embedded strings, but string fields were not supplied during instantiation", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStringsUnknownHash.db2');
     }
 
     public function testKnownEmbedStrings()
@@ -419,54 +399,49 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals(4, $reader->getFieldCount());
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage ID field 88 in file badidfield.db2 is out of bounds: 0-7
+     */
     public function testBadIdField()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/BadIdField.db2');
-            $this->fail("No exception raised with bad ID field in header");
-        } catch (Exception $e) {
-            $this->assertEquals("Expected ID field 88 does not exist. Only found 7 fields.", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/BadIdField.db2');
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Expected ID field 5 reportedly has 2 values per row
+     */
     public function testBadIdFieldCount()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/BadIdFieldCount.db2');
-            $this->fail("No exception raised with bad ID field count in header");
-        } catch (Exception $e) {
-            $this->assertEquals("Expected ID field 5 reportedly has 2 values per row", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/BadIdFieldCount.db2');
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Could not find end of embedded string 2 x 0 in record 0
+     */
     public function testEmbedStringNoEnd()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsNoEnd.db2', [2]);
-            $this->fail("No exception raised with bad embedded string record");
-        } catch (Exception $e) {
-            $this->assertEquals("Could not find end of embedded string 2 x 0 in record 0", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStringsNoEnd.db2', [2]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Copy block referenced ID 10066329 which does not exist
+     */
     public function testCopyBlockReferenceMissingId()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/BadCopyBlock.db2', [2]);
-            $this->fail("No exception raised with bad copy block reference");
-        } catch (Exception $e) {
-            $this->assertEquals("Copy block referenced ID 10066329 which does not exist", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/BadCopyBlock.db2', [2]);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage You may only pass an array of string fields when loading a DB2
+     */
     public function testInvalidStringFields()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/EmbedStrings.db2', 'invalid');
-            $this->fail("No exception raised during construction with bad string fields argument");
-        } catch (Exception $e) {
-            $this->assertEquals("You may only pass an array of string fields when loading a DB2", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStrings.db2', 'invalid');
     }
 
     public function testLastFieldNotArray()
@@ -485,43 +460,43 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals([96], $adbViaMethod->getRecord(150));
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Unknown DB2 format: WCH7 in file idblock.adb.
+     */
     public function testAdbInvalidConstructor()
     {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/IdBlock.adb');
-            $this->fail("No exception raised trying to open an ADB without a DB2");
-        } catch (Exception $e) {
-            $this->assertEquals("Unknown DB2 format: WCH7", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/IdBlock.adb');
     }
 
-    public function testDb2IsNotAdb()
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Unknown ADB format: WDB5 in file idblock.db2.
+     */
+    public function testOpenDb2AsAdb()
     {
         $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-        try {
-            $adbViaConstructor = new Reader(static::WDB5_PATH . '/IdBlock.db2', $db2);
-            $this->fail("No exception raised trying to open an DB2 as an ADB via Constructor");
-        } catch (Exception $e) {
-            $this->assertEquals("Unknown ADB format: WDB5", $e->getMessage());
-        }
-
-        try {
-            $adbViaMethod = $db2->loadAdb(static::WDB5_PATH . '/IdBlock.db2');
-            $this->fail("No exception raised trying to open an DB2 as an ADB via Method");
-        } catch (Exception $e) {
-            $this->assertEquals("Unknown ADB format: WDB5", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/IdBlock.db2', $db2);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Unknown ADB format: WDB5 in file idblock.db2.
+     */
+    public function testOpenDb2AsAdbViaMethod()
+    {
+        $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
+        $db2->loadAdb(static::WDB5_PATH . '/IdBlock.db2');
+    }
+
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage Expected size: 1329, actual size: 59
+     */
     public function testBadAdbLength()
     {
         $db2 = new Reader(static::WDB5_PATH . '/IdBlock.db2');
-        try {
-            $adb = new Reader(static::WDB5_PATH . '/BadLength.adb', $db2);
-            $this->fail("No exception raised with a truncated ADB file");
-        } catch (Exception $e) {
-            $this->assertEquals("Expected size: 1329, actual size: 59", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/BadLength.adb', $db2);
     }
 
     public function testAdbWithEmbeddedStrings()
@@ -532,26 +507,24 @@ class ReaderTest extends phpunit\framework\TestCase
         $this->assertEquals([1221,123321,'ADB',321123], $adb->getRecord(175));
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage locale of embedstringswronglocale.adb (2) does not match locale of embedstrings.db2 (1)
+     */
     public function testAdbLocaleMismatch()
     {
         $db2 = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
-        try {
-            $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongLocale.adb', $db2);
-            $this->fail("No exception raised with the wrong locale in the ADB file");
-        } catch (Exception $e) {
-            $this->assertEquals("locale of embedstringswronglocale.adb (2) does not match locale of embedstrings.db2 (1)", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStringsWrongLocale.adb', $db2);
     }
 
+    /**
+     * @expectedException \Exception
+     * @expectedExceptionMessage layoutHash of embedstringswronghash.adb (2913643194) does not match layoutHash of embedstrings.db2 (4022250974)
+     */
     public function testAdbHashMismatch()
     {
         $db2 = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
-        try {
-            $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongHash.adb', $db2);
-            $this->fail("No exception raised with the wrong locale in the ADB file");
-        } catch (Exception $e) {
-            $this->assertEquals("layoutHash of embedstringswronghash.adb (2913643194) does not match layoutHash of embedstrings.db2 (4022250974)", $e->getMessage());
-        }
+        new Reader(static::WDB5_PATH . '/EmbedStringsWrongHash.adb', $db2);
     }
 
     public function testGetFieldTypes()
