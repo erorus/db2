@@ -616,6 +616,10 @@ class Reader
         return $fieldTypes;
     }
 
+    public function getLayoutHash() {
+        return $this->layoutHash;
+    }
+
     public function loadAdb($adbPath) {
         return new Reader($adbPath, $this);
     }
