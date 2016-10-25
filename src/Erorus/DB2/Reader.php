@@ -7,6 +7,7 @@ class Reader
     const EMBEDDED_STRING_FIELDS = [
         0xEFBEADDE => [2], // tests/wdb5/EmbedStrings.db2
         0x27909DB0 => [13,14,15,16,17], // item-sparse.db2 as of 7.0.3.22522 and earlier
+        0xF62C72EE => [13,14,15,16,17], // item-sparse.db2 as of 7.1.0.22900
     ];
 
     const FIELD_TYPE_UNKNOWN = 0;
@@ -223,7 +224,7 @@ class Reader
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
         if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last column is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-            || ($this->idField == $fieldId))) {                   // or the reported ID field is the last field
+            || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
