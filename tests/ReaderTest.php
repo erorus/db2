@@ -2,7 +2,7 @@
 
 use Erorus\DB2\Reader;
 
-class ReaderTest extends phpunit\framework\TestCase
+class ReaderTest extends PHPUnit_Framework_TestCase
 {
     const WDB2_PATH = __DIR__.'/wdb2';
     const WDB5_PATH = __DIR__.'/wdb5';
@@ -197,16 +197,6 @@ class ReaderTest extends phpunit\framework\TestCase
         }
         if ($recordCount != 2) {
             $this->fail("Returned $recordCount records instead of 2 from IdBlock2.db2 in iterator");
-        }
-    }
-
-    public function testFlattenString()
-    {
-        try {
-            $result = Reader::flattenRecord("abc");
-            $this->fail("Returned something when trying to flatten string abc");
-        } catch (TypeError $e) {
-            $this->assertFalse(strpos($e->getMessage(), 'must be of the type array, string given') === false);
         }
     }
 
