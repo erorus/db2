@@ -580,5 +580,13 @@ class ReaderTest extends phpunit\framework\TestCase
             ], $db2->getFieldTypes(false));
     }
 
+    public function testLayoutHash()
+    {
+        $reader = new Reader(static::WDB5_PATH . '/Arrays.db2');
+        $this->assertEquals(0xEFBEADDE, $reader->getLayoutHash());
+
+        $reader = new Reader(static::WDB5_PATH . '/EmbedStringsUnknownHash.db2', [2]);
+        $this->assertEquals(0xADAAAABA, $reader->getLayoutHash());
+    }
 }
 
