@@ -553,7 +553,7 @@ class Reader
                 case 4: // 4-byte int
                     break;
                 default:
-                    throw new \Exception("Unknown nonzero field type: $type");
+                    throw new \Exception("Unknown nonzero field type: $enumType");
             }
 
             $this->recordFormat[$field] = [
@@ -563,18 +563,25 @@ class Reader
                 'signed'      => false,
                 'zero'        => str_repeat("\x00", $size),
             ];
+            $this->nonzeroLookup[$field] = [];
 
             $embeddedStrings = false;
             if ($this->hasEmbeddedStrings && $type == Reader::FIELD_TYPE_STRING) {
+                // @codeCoverageIgnoreStart
+                // file with both embedded strings and nonzero block not found in wild, this is just a guess
                 $embeddedStrings = true;
                 $this->recordFormat[$field]['zero'] = "\x00";
+                // @codeCoverageIgnoreEnd
             }
 
             for ($entry = 0; $entry < $entryCount; $entry++) {
                 $id = current(unpack('V', fread($this->fileHandle, 4)));
                 if ($embeddedStrings) {
+                    // @codeCoverageIgnoreStart
+                    // file with both embedded strings and nonzero block not found in wild, this is just a guess
                     $maxLength = $this->nonzeroBlockSize - (ftell($this->fileHandle) - $this->nonzeroBlockPos);
                     $this->nonzeroLookup[$field][$id] = stream_get_line($this->fileHandle, $maxLength, "\x00") . "\x00";
+                    // @codeCoverageIgnoreEnd
                 } else {
                     $this->nonzeroLookup[$field][$id] = fread($this->fileHandle, $size);
                 }
@@ -688,7 +695,7 @@ class Reader
     // standard usage
 
     public function getFieldCount() {
-        return $this->fieldCount;
+        return $this->totalFieldCount;
     }
 
     public function getRecord($id) {
@@ -732,8 +739,8 @@ class Reader
 
     public function setFieldsSigned(Array $fields) {
         foreach ($fields as $fieldId => $isSigned) {
-            if ($fieldId < 0 || $fieldId >= $this->fieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->fieldCount - 1));
+            if ($fieldId < 0 || $fieldId >= $this->totalFieldCount) {
+                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
             }
             if (!$this->hasIdBlock && $this->idField == $fieldId) {
                 continue;
@@ -759,8 +766,8 @@ class Reader
             if (is_numeric($name)) {
                 throw new \Exception("Field $fieldId Name ($name) must NOT be numeric");
             }
-            if ($fieldId < 0 || $fieldId >= $this->fieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->fieldCount - 1));
+            if ($fieldId < 0 || $fieldId >= $this->totalFieldCount) {
+                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
             }
             if (!$name) {
                 unset($this->recordFormat[$fieldId]['name']);
