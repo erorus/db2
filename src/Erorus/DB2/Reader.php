@@ -36,6 +36,8 @@ class Reader
     private $locale = 0;
     private $copyBlockSize = 0;
     private $flags = 0;
+    private $totalFieldCount = 0;
+    private $nonzeroBlockSize = 0;
     private $idField = -1;
 
     private $hasEmbeddedStrings = false;
@@ -46,11 +48,14 @@ class Reader
     private $indexBlockPos = 0;
     private $idBlockPos = 0;
     private $copyBlockPos = 0;
+    private $nonzeroBlockPos = 0;
 
     private $recordFormat = [];
     
     private $idMap = [];
     private $recordOffsets = null;
+
+    private $nonzeroLookup = [];
 
     function __construct($db2path, $arg = null) {
         if (is_string($db2path)) {
@@ -82,6 +87,7 @@ class Reader
                     $this->openWdb2();
                     break;
                 case 'WDB5':
+                case 'WDB6':
                     if (!is_null($arg) && !is_array($arg)) {
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
@@ -120,6 +126,7 @@ class Reader
         $this->headerSize = 4 * ($headerFieldCount + 1);
 
         $this->hasEmbeddedStrings = false;
+        $this->totalFieldCount = $this->fieldCount;
 
         $this->hasIdBlock = $this->maxId > 0;
         $this->idBlockPos = $this->headerSize;
@@ -155,8 +162,18 @@ class Reader
     }
 
     private function openWdb5($stringFields) {
+        $wdbVersion = intval(substr($this->fileFormat, 3));
+
+        if ($wdbVersion >= 6) {
+            $preambleLength = 56;
+            $headerFormat = 'V10x/v2y/V2z';
+        } else {
+            $preambleLength = 48;
+            $headerFormat = 'V10x/v2y';
+        }
+
         fseek($this->fileHandle, 4);
-        $parts = array_values(unpack('V10x/v2y',fread($this->fileHandle, 4 * 11)));
+        $parts = array_values(unpack($headerFormat, fread($this->fileHandle, $preambleLength - 4)));
 
         $this->recordCount      = $parts[0];
         $this->fieldCount       = $parts[1];
@@ -170,8 +187,10 @@ class Reader
         $this->copyBlockSize    = $parts[9];
         $this->flags            = $parts[10];
         $this->idField          = $parts[11];
+        $this->totalFieldCount  = $wdbVersion >= 6 ? $parts[12] : $this->fieldCount;
+        $this->nonzeroBlockSize = $wdbVersion >= 6 ? $parts[13] : 0;
 
-        $this->headerSize = 48 + $this->fieldCount * 4;
+        $this->headerSize = $preambleLength + $this->fieldCount * 4;
 
         $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
         $this->hasIdBlock = ($this->flags & 4) > 0;
@@ -198,12 +217,14 @@ class Reader
 
         $this->copyBlockPos = $this->idBlockPos + ($this->hasIdBlock ? $this->recordCount * 4 : 0);
 
-        $eof = $this->copyBlockPos + $this->copyBlockSize;
+        $this->nonzeroBlockPos = $this->copyBlockPos + $this->copyBlockSize;
+
+        $eof = $this->nonzeroBlockPos + $this->nonzeroBlockSize;
         if ($eof != $this->fileSize) {
             throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
-        fseek($this->fileHandle, 48);
+        fseek($this->fileHandle, $preambleLength);
         $this->recordFormat = [];
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $this->recordFormat[$fieldId] = unpack('vbitShift/voffset', fread($this->fileHandle, 4));
@@ -222,7 +243,7 @@ class Reader
         $fieldId = $this->fieldCount - 1;
         $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
-        if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last column is an array
+        if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
@@ -236,6 +257,8 @@ class Reader
                 throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
             }
         }
+
+        $this->findNonzeroFields();
 
         $this->populateIdMap();
 
@@ -271,6 +294,7 @@ class Reader
 
         $this->headerSize = 52;
 
+        $this->totalFieldCount = $this->fieldCount;
         $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
         $this->hasIdBlock = ($this->flags & 4) > 0;
 
@@ -488,9 +512,78 @@ class Reader
         ksort($this->idMap);
     }
 
+    private function findNonzeroFields() {
+        $this->nonzeroLookup = [];
+        if ($this->nonzeroBlockSize == 0) {
+            return;
+        }
+
+        fseek($this->fileHandle, $this->nonzeroBlockPos);
+        $fieldCount = current(unpack('V', fread($this->fileHandle, 4)));
+        if ($fieldCount != $this->totalFieldCount) {
+            throw new \Exception(sprintf("Expected %d fields in nonzero block, found %d", $this->totalFieldCount, $fieldCount));
+        }
+
+        for ($field = 0; $field < $this->totalFieldCount; $field++) {
+            list($entryCount, $enumType) = array_values(unpack('V1x/C1y', fread($this->fileHandle, 5)));
+            if ($field < $this->fieldCount) {
+                if ($entryCount > 0) {
+                    throw new \Exception(sprintf("Expected 0 entries in nonzero block field %d, instead found %d", $field, $entryCount));
+                }
+                continue;
+            }
+
+            $size = 4;
+            $type = Reader::FIELD_TYPE_INT;
+
+            switch ($enumType) {
+                case 0: // string
+                    $type = Reader::FIELD_TYPE_STRING;
+                    break;
+                case 1: // short
+                    $size = 2;
+                    break;
+                case 2: // byte
+                    $size = 1;
+                    break;
+                case 3: // float
+                    $type = Reader::FIELD_TYPE_FLOAT;
+                    break;
+                case 4: // 4-byte int
+                    break;
+                default:
+                    throw new \Exception("Unknown nonzero field type: $type");
+            }
+
+            $this->recordFormat[$field] = [
+                'valueCount'  => 1,
+                'valueLength' => $size,
+                'type'        => $type,
+                'signed'      => false,
+                'zero'        => str_repeat("\x00", $size),
+            ];
+
+            $embeddedStrings = false;
+            if ($this->hasEmbeddedStrings && $type == Reader::FIELD_TYPE_STRING) {
+                $embeddedStrings = true;
+                $this->recordFormat[$field]['zero'] = "\x00";
+            }
+
+            for ($entry = 0; $entry < $entryCount; $entry++) {
+                $id = current(unpack('V', fread($this->fileHandle, 4)));
+                if ($embeddedStrings) {
+                    $maxLength = $this->nonzeroBlockSize - (ftell($this->fileHandle) - $this->nonzeroBlockPos);
+                    $this->nonzeroLookup[$field][$id] = stream_get_line($this->fileHandle, $maxLength, "\x00") . "\x00";
+                } else {
+                    $this->nonzeroLookup[$field][$id] = fread($this->fileHandle, $size);
+                }
+            }
+        }
+    }
+
     // general purpose for internal use
 
-    private function getRawRecord($recordOffset) {
+    private function getRawRecord($recordOffset, $id = false) {
         if (!is_null($this->recordOffsets)) {
             $pointer = unpack('Vpos/vsize', $this->recordOffsets[$recordOffset]);
             if ($pointer['size'] == 0) {
@@ -503,6 +596,15 @@ class Reader
         } else {
             fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
             $data = fread($this->fileHandle, $this->recordSize);
+        }
+        if ($id !== false) {
+            foreach ($this->nonzeroLookup as $field => $lookup) {
+                if (isset($lookup[$id])) {
+                    $data .= $lookup[$id];
+                } else {
+                    $data .= $this->recordFormat[$field]['zero'];
+                }
+            }
         }
         return $data;
     }
@@ -519,18 +621,18 @@ class Reader
         return stream_get_line($this->fileHandle, $maxLength, "\x00");
     }
 
-    private function getRecordByOffset($recordOffset) {
+    private function getRecordByOffset($recordOffset, $id) {
         if ($recordOffset < 0 || $recordOffset >= $this->recordCount) {
             // @codeCoverageIgnoreStart
             throw new \Exception("Requested record offset $recordOffset out of bounds: 0-".$this->recordCount);
             // @codeCoverageIgnoreEnd
         }
 
-        $record = $this->getRawRecord($recordOffset);
+        $record = $this->getRawRecord($recordOffset, $id);
 
         $runningOffset = 0;
         $row = [];
-        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+        for ($fieldId = 0; $fieldId < $this->totalFieldCount; $fieldId++) {
             $field = [];
             $format = $this->recordFormat[$fieldId];
             for ($valueId = 0; $valueId < $format['valueCount']; $valueId++) {
@@ -593,7 +695,7 @@ class Reader
             return null;
         }
         
-        return $this->getRecordByOffset($this->idMap[$id]);
+        return $this->getRecordByOffset($this->idMap[$id], $id);
     }
 
     public function getIds() {
@@ -602,7 +704,7 @@ class Reader
 
     public function generateRecords() {
         foreach ($this->idMap as $id => $offset) {
-            yield $id => $this->getRecordByOffset($offset);
+            yield $id => $this->getRecordByOffset($offset, $id);
         }
     }
 
