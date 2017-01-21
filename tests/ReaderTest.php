@@ -4,6 +4,7 @@ use Erorus\DB2\Reader;
 
 class ReaderTest extends phpunit\framework\TestCase
 {
+    const WDB2_PATH = __DIR__.'/wdb2';
     const WDB5_PATH = __DIR__.'/wdb5';
 
     public function testInvalidDB2Param()
@@ -588,5 +589,69 @@ class ReaderTest extends phpunit\framework\TestCase
         $reader = new Reader(static::WDB5_PATH . '/EmbedStringsUnknownHash.db2', [2]);
         $this->assertEquals(0xADAAAABA, $reader->getLayoutHash());
     }
+
+    public function testWDB2IdBlock()
+    {
+        $reader = new Reader(static::WDB2_PATH.'/IdBlock.db2');
+
+        $this->assertEquals([200], $reader->getRecord(100));
+        $this->assertEquals(1, count($reader->getIds()));
+    }
+
+    public function testWDB2IdField()
+    {
+        $reader = new Reader(static::WDB2_PATH.'/IdField.db2');
+
+        $this->assertEquals([100,10,2000,200000,10,2.5,"Test"], $reader->getRecord(100));
+        $this->assertEquals([150,250,2500,250000,25000000,-2.5,"Pass"], $reader->getRecord(150));
+        $this->assertEquals([200,0,0,0,0,0,""], $reader->getRecord(200));
+
+        $this->assertEquals(3, count($reader->getIds()));
+    }
+
+    public function testWDB2FieldsFromArrays()
+    {
+        $reader = new Reader(static::WDB2_PATH.'/Arrays.db2');
+
+        $this->assertEquals([100,10,100,2000,20000,200000,2000000,10,5,2.5,1.25,"One","Two"], $reader->getRecord(100));
+        $this->assertEquals([150,250,205,1250,2500,250000,62500,25000000,1234567890,-2.5,-1.25,"Three","Two"], $reader->getRecord(150));
+        $this->assertEquals([200,0,0,0,0,0,0,0,0,0,0,"",""], $reader->getRecord(200));
+        $this->assertEquals(3, count($reader->getIds()));
+    }
+
+    public function testWDB2FieldTypes()
+    {
+        $reader = new Reader(static::WDB2_PATH.'/FieldTypes.db2');
+
+        $this->assertEquals([10,2000,200000,10,2.5,"Test"], $reader->getRecord(100));
+        $this->assertEquals([250,65000,9000000,2500000000,-2.5,"Passed"], $reader->getRecord(150));
+        $this->assertEquals([0,0,0,0,0,""], $reader->getRecord(200));
+        $this->assertEquals(3, count($reader->getIds()));
+
+        $reader->setFieldsSigned([3 => true]);
+        $record = $reader->getRecord(150);
+        $this->assertEquals(-1794967296, $record[3]);
+    }
+
+    public function testWDB2TooLong()
+    {
+        try {
+            $reader = new Reader(static::WDB2_PATH.'/TooLong.db2');
+            $this->fail("Did not notice db2 file was too long");
+        } catch (Exception $e) {
+            $this->assertEquals('Expected size: 739, actual size: '.filesize(static::WDB2_PATH.'/TooLong.db2'), $e->getMessage());
+        }
+    }
+
+    public function testWDB2TooShort()
+    {
+        try {
+            $reader = new Reader(static::WDB2_PATH.'/TooShort.db2');
+            $this->fail("Did not notice db2 file was too short");
+        } catch (Exception $e) {
+            $this->assertEquals('Expected size: 739, actual size: '.filesize(static::WDB2_PATH.'/TooShort.db2'), $e->getMessage());
+        }
+    }
+
 }
 

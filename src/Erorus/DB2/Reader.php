@@ -151,7 +151,7 @@ class Reader
                 'valueLength' => 4,
                 'valueCount' => 1,
                 'type' => static::FIELD_TYPE_UNKNOWN,
-                'signed' => true,
+                'signed' => false,
             ] ;
         }
 
@@ -435,6 +435,7 @@ class Reader
                     if ($record) {
                         $this->idMap[$x] = $record - 1;
                     }
+                    fseek($this->fileHandle, 2, SEEK_CUR); // ignore embed string length in this record
                 }
             } else {
                 for ($x = 0; $x < $this->recordCount; $x++) {
