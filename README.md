@@ -2,6 +2,8 @@
 
 This is a small library to read DB2 and ADB files (data tables) from World of Warcraft.
 
+[![Build Status](https://travis-ci.org/erorus/db2.svg?branch=master)](https://travis-ci.org/erorus/db2)
+
 ## Installation
 
 Just copy the class file into your project and include it where you want to use it. Eventually I want to make this compatible with Composer, but that's not done yet.
