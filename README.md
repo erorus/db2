@@ -47,7 +47,7 @@ Also check out example.php, which is what I'm using during development.
 
 ## Compatibility
 
-Works best with the WDB5 format, which is used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
+Works best with the WDB5 and WDB6 formats, which are used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, the nonzero block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
 
 Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format, which is also compatible with this library. Support for WDB2 is not as robust, as there are fewer clues regarding field types.
 
@@ -73,7 +73,7 @@ Most of the file format details were found by documentation at [the WoWDev wiki]
 
 ## License
 
-Copyright 2016 Gerard Dombroski
+Copyright 2017 Gerard Dombroski
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use these files except in compliance with the License.
