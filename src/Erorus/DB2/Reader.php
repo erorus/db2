@@ -199,7 +199,7 @@ class Reader
             if (!$this->hasIdBlock) {
                 throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
-            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - ($this->recordCount * 4);
+            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->nonzeroBlockSize - ($this->recordCount * 4);
             $this->indexBlockPos = $this->stringBlockSize;
             $this->stringBlockSize = 0;
 
