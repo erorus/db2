@@ -63,11 +63,9 @@ This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/ne
 
 This is separate from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc. Eventually.
 
-## Disclaimers
+## Disclaimer
 
 This work is neither endorsed by nor affiliated with Blizzard Entertainment.
-
-This work is developed with no involvement of ZAM Network, which is my current employer.
 
 ## Thanks
 
