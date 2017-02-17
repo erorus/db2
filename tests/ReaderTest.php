@@ -643,7 +643,7 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         }
     }
 
-    public function testNonzeroFields()
+    public function testCommonFields()
     {
         $reader = new Reader(static::WDB5_PATH . '/FieldTypesWDB6.db2');
 
@@ -654,14 +654,14 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(10,         $rec[3]); // 4-byte
         $this->assertEquals(2.5,        $rec[4]); // float
         $this->assertEquals('Test',     $rec[5]); // string
-        $this->assertEquals(0,          $rec[6]); // nonzero 4-byte
-        $this->assertEquals(1,          $rec[7]); // nonzero 1-byte
-        $this->assertEquals(6,          $rec[8]); // nonzero 1-byte
-        $this->assertEquals(0,          $rec[9]); // nonzero 2-byte
-        $this->assertEquals(1.25,       $rec[10]); // nonzero float
-        $this->assertEquals('',         $rec[11]); // nonzero string
-        $this->assertEquals(666666666,  $rec[12]); // nonzero 4-byte
-        $this->assertEquals(204,        $rec[13]); // nonzero 1-byte
+        $this->assertEquals(0,          $rec[6]); // common 4-byte
+        $this->assertEquals(1,          $rec[7]); // common 1-byte
+        $this->assertEquals(6,          $rec[8]); // common 1-byte
+        $this->assertEquals(0,          $rec[9]); // common 2-byte
+        $this->assertEquals(1.25,       $rec[10]); // common float
+        $this->assertEquals('',         $rec[11]); // common string
+        $this->assertEquals(666666666,  $rec[12]); // common 4-byte
+        $this->assertEquals(204,        $rec[13]); // common 1-byte
 
         $rec = $reader->getRecord(150);
         $this->assertEquals(250,        $rec[0]);
@@ -670,14 +670,14 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(2500000000, $rec[3]);
         $this->assertEquals(-2.5,       $rec[4]);
         $this->assertEquals('Passed',   $rec[5]);
-        $this->assertEquals(0,          $rec[6]); // nonzero 4-byte
-        $this->assertEquals(2,          $rec[7]); // nonzero 1-byte
-        $this->assertEquals(5,          $rec[8]); // nonzero 1-byte
-        $this->assertEquals(2000,       $rec[9]); // nonzero 2-byte
-        $this->assertEquals(0,          $rec[10]); // nonzero float
-        $this->assertEquals('Passed',   $rec[11]); // nonzero string
-        $this->assertEquals(999999999,  $rec[12]); // nonzero 4-byte
-        $this->assertEquals(255,        $rec[13]); // nonzero 1-byte
+        $this->assertEquals(0,          $rec[6]); // common 4-byte
+        $this->assertEquals(2,          $rec[7]); // common 1-byte
+        $this->assertEquals(5,          $rec[8]); // common 1-byte
+        $this->assertEquals(2000,       $rec[9]); // common 2-byte
+        $this->assertEquals(0,          $rec[10]); // common float
+        $this->assertEquals('Passed',   $rec[11]); // common string
+        $this->assertEquals(999999999,  $rec[12]); // common 4-byte
+        $this->assertEquals(255,        $rec[13]); // common 1-byte
 
         $rec = $reader->getRecord(200);
         $this->assertEquals(0, $rec[0]);
@@ -686,17 +686,17 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(0, $rec[3]);
         $this->assertEquals(0, $rec[4]);
         $this->assertEquals('', $rec[5]);
-        $this->assertEquals(0, $rec[6]); // nonzero 4-byte
-        $this->assertEquals(3, $rec[7]); // nonzero 1-byte
-        $this->assertEquals(4, $rec[8]); // nonzero 1-byte
-        $this->assertEquals(0, $rec[9]); // nonzero 2-byte
-        $this->assertEquals(0, $rec[10]); // nonzero float
-        $this->assertEquals('', $rec[11]); // nonzero string
-        $this->assertEquals(0, $rec[12]); // nonzero 4-byte
-        $this->assertEquals(0, $rec[13]); // nonzero 1-byte
+        $this->assertEquals(0, $rec[6]); // common 4-byte
+        $this->assertEquals(3, $rec[7]); // common 1-byte
+        $this->assertEquals(4, $rec[8]); // common 1-byte
+        $this->assertEquals(0, $rec[9]); // common 2-byte
+        $this->assertEquals(0, $rec[10]); // common float
+        $this->assertEquals('', $rec[11]); // common string
+        $this->assertEquals(0, $rec[12]); // common 4-byte
+        $this->assertEquals(0, $rec[13]); // common 1-byte
     }
 
-    public function testNonzeroSigned()
+    public function testCommonSigned()
     {
         $reader = new Reader(static::WDB5_PATH.'/FieldTypesWDB6.db2');
 
@@ -717,44 +717,44 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         $this->assertEquals(255,        $rec[13]);
     }
 
-    public function testNonzeroNames()
+    public function testCommonNames()
     {
         $reader = new Reader(static::WDB5_PATH.'/FieldTypesWDB6.db2');
 
-        $reader->setFieldNames([4 => 'float', 10 => 'nonzeroFloat']);
+        $reader->setFieldNames([4 => 'float', 10 => 'commonFloat']);
         $rec = $reader->getRecord(100);
 
         $this->assertEquals(2.5, $rec['float']);
-        $this->assertEquals(1.25, $rec['nonzeroFloat']);
+        $this->assertEquals(1.25, $rec['commonFloat']);
     }
 
-    public function testNonzeroFieldCountMismatch()
+    public function testCommonFieldCountMismatch()
     {
         try {
-            $reader = new Reader(static::WDB5_PATH.'/NonzeroFieldCountMismatch.db2');
-            $this->fail("Did not notice nonzero field counts differ between header and nonzero block");
+            $reader = new Reader(static::WDB5_PATH.'/CommonFieldCountMismatch.db2');
+            $this->fail("Did not notice common field counts differ between header and common block");
         } catch (Exception $e) {
-            $this->assertEquals('Expected 14 fields in nonzero block, found 13', $e->getMessage());
+            $this->assertEquals('Expected 14 fields in common block, found 13', $e->getMessage());
         }
     }
 
-    public function testNonzeroEntriesInRegularField()
+    public function testCommonEntriesInRegularField()
     {
         try {
-            $reader = new Reader(static::WDB5_PATH.'/NonzeroEntriesInRegularField.db2');
-            $this->fail("Did not notice nonzero entries defined for regular field");
+            $reader = new Reader(static::WDB5_PATH.'/CommonEntriesInRegularField.db2');
+            $this->fail("Did not notice common entries defined for regular field");
         } catch (Exception $e) {
-            $this->assertEquals('Expected 0 entries in nonzero block field 1, instead found 3', $e->getMessage());
+            $this->assertEquals('Expected 0 entries in common block field 1, instead found 3', $e->getMessage());
         }
     }
 
-    public function testNonzeroUnknownFieldType()
+    public function testCommonUnknownFieldType()
     {
         try {
-            $reader = new Reader(static::WDB5_PATH.'/NonzeroUnknownFieldType.db2');
-            $this->fail("Did not notice unknown type of nonzero field");
+            $reader = new Reader(static::WDB5_PATH.'/CommonUnknownFieldType.db2');
+            $this->fail("Did not notice unknown type of common field");
         } catch (Exception $e) {
-            $this->assertEquals('Unknown nonzero field type: 240', $e->getMessage());
+            $this->assertEquals('Unknown common field type: 240', $e->getMessage());
         }
     }
 

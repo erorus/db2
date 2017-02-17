@@ -37,7 +37,7 @@ class Reader
     private $copyBlockSize = 0;
     private $flags = 0;
     private $totalFieldCount = 0;
-    private $nonzeroBlockSize = 0;
+    private $commonBlockSize = 0;
     private $idField = -1;
 
     private $hasEmbeddedStrings = false;
@@ -48,14 +48,14 @@ class Reader
     private $indexBlockPos = 0;
     private $idBlockPos = 0;
     private $copyBlockPos = 0;
-    private $nonzeroBlockPos = 0;
+    private $commonBlockPos = 0;
 
     private $recordFormat = [];
     
     private $idMap = [];
     private $recordOffsets = null;
 
-    private $nonzeroLookup = [];
+    private $commonLookup = [];
 
     function __construct($db2path, $arg = null) {
         if (is_string($db2path)) {
@@ -188,7 +188,7 @@ class Reader
         $this->flags            = $parts[10];
         $this->idField          = $parts[11];
         $this->totalFieldCount  = $wdbVersion >= 6 ? $parts[12] : $this->fieldCount;
-        $this->nonzeroBlockSize = $wdbVersion >= 6 ? $parts[13] : 0;
+        $this->commonBlockSize = $wdbVersion >= 6 ? $parts[13] : 0;
 
         $this->headerSize = $preambleLength + $this->fieldCount * 4;
 
@@ -199,7 +199,7 @@ class Reader
             if (!$this->hasIdBlock) {
                 throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
-            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->nonzeroBlockSize - ($this->recordCount * 4);
+            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->commonBlockSize - ($this->recordCount * 4);
             $this->indexBlockPos = $this->stringBlockSize;
             $this->stringBlockSize = 0;
 
@@ -217,9 +217,9 @@ class Reader
 
         $this->copyBlockPos = $this->idBlockPos + ($this->hasIdBlock ? $this->recordCount * 4 : 0);
 
-        $this->nonzeroBlockPos = $this->copyBlockPos + $this->copyBlockSize;
+        $this->commonBlockPos = $this->copyBlockPos + $this->copyBlockSize;
 
-        $eof = $this->nonzeroBlockPos + $this->nonzeroBlockSize;
+        $eof = $this->commonBlockPos + $this->commonBlockSize;
         if ($eof != $this->fileSize) {
             throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
@@ -258,7 +258,7 @@ class Reader
             }
         }
 
-        $this->findNonzeroFields();
+        $this->findCommonFields();
 
         $this->populateIdMap();
 
@@ -513,23 +513,23 @@ class Reader
         ksort($this->idMap);
     }
 
-    private function findNonzeroFields() {
-        $this->nonzeroLookup = [];
-        if ($this->nonzeroBlockSize == 0) {
+    private function findCommonFields() {
+        $this->commonLookup = [];
+        if ($this->commonBlockSize == 0) {
             return;
         }
 
-        fseek($this->fileHandle, $this->nonzeroBlockPos);
+        fseek($this->fileHandle, $this->commonBlockPos);
         $fieldCount = current(unpack('V', fread($this->fileHandle, 4)));
         if ($fieldCount != $this->totalFieldCount) {
-            throw new \Exception(sprintf("Expected %d fields in nonzero block, found %d", $this->totalFieldCount, $fieldCount));
+            throw new \Exception(sprintf("Expected %d fields in common block, found %d", $this->totalFieldCount, $fieldCount));
         }
 
         for ($field = 0; $field < $this->totalFieldCount; $field++) {
             list($entryCount, $enumType) = array_values(unpack('V1x/C1y', fread($this->fileHandle, 5)));
             if ($field < $this->fieldCount) {
                 if ($entryCount > 0) {
-                    throw new \Exception(sprintf("Expected 0 entries in nonzero block field %d, instead found %d", $field, $entryCount));
+                    throw new \Exception(sprintf("Expected 0 entries in common block field %d, instead found %d", $field, $entryCount));
                 }
                 continue;
             }
@@ -553,7 +553,7 @@ class Reader
                 case 4: // 4-byte int
                     break;
                 default:
-                    throw new \Exception("Unknown nonzero field type: $enumType");
+                    throw new \Exception("Unknown common field type: $enumType");
             }
 
             $this->recordFormat[$field] = [
@@ -563,12 +563,12 @@ class Reader
                 'signed'      => false,
                 'zero'        => str_repeat("\x00", $size),
             ];
-            $this->nonzeroLookup[$field] = [];
+            $this->commonLookup[$field] = [];
 
             $embeddedStrings = false;
             if ($this->hasEmbeddedStrings && $type == Reader::FIELD_TYPE_STRING) {
                 // @codeCoverageIgnoreStart
-                // file with both embedded strings and nonzero block not found in wild, this is just a guess
+                // file with both embedded strings and common block not found in wild, this is just a guess
                 $embeddedStrings = true;
                 $this->recordFormat[$field]['zero'] = "\x00";
                 // @codeCoverageIgnoreEnd
@@ -578,12 +578,12 @@ class Reader
                 $id = current(unpack('V', fread($this->fileHandle, 4)));
                 if ($embeddedStrings) {
                     // @codeCoverageIgnoreStart
-                    // file with both embedded strings and nonzero block not found in wild, this is just a guess
-                    $maxLength = $this->nonzeroBlockSize - (ftell($this->fileHandle) - $this->nonzeroBlockPos);
-                    $this->nonzeroLookup[$field][$id] = stream_get_line($this->fileHandle, $maxLength, "\x00") . "\x00";
+                    // file with both embedded strings and common block not found in wild, this is just a guess
+                    $maxLength = $this->commonBlockSize - (ftell($this->fileHandle) - $this->commonBlockPos);
+                    $this->commonLookup[$field][$id] = stream_get_line($this->fileHandle, $maxLength, "\x00") . "\x00";
                     // @codeCoverageIgnoreEnd
                 } else {
-                    $this->nonzeroLookup[$field][$id] = fread($this->fileHandle, $size);
+                    $this->commonLookup[$field][$id] = fread($this->fileHandle, $size);
                 }
             }
         }
@@ -606,7 +606,7 @@ class Reader
             $data = fread($this->fileHandle, $this->recordSize);
         }
         if ($id !== false) {
-            foreach ($this->nonzeroLookup as $field => $lookup) {
+            foreach ($this->commonLookup as $field => $lookup) {
                 if (isset($lookup[$id])) {
                     $data .= $lookup[$id];
                 } else {
