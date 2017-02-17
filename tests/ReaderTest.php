@@ -394,20 +394,25 @@ class ReaderTest extends PHPUnit_Framework_TestCase
         $this->assertEquals($rec, $reader->getRecord(102)); // 102 just points to 103's data in index block
     }
 
-    public function testUnknownEmbedStrings()
-    {
-        try {
-            $reader = new Reader(static::WDB5_PATH . '/EmbedStringsUnknownHash.db2');
-            $this->fail("No exception raised with file with unknown embedded strings file");
-        } catch (Exception $e) {
-            $this->assertEquals("embedstringsunknownhash.db2 has embedded strings, but string fields were not supplied during instantiation", $e->getMessage());
-        }
-    }
-
-    public function testKnownEmbedStrings()
+    public function testEmbedStringsUnknownFields()
     {
         $reader = new Reader(static::WDB5_PATH . '/EmbedStrings.db2');
-        $this->assertEquals(4, $reader->getFieldCount());
+
+        $rec = $reader->getRecord(100);
+        $this->assertEquals(9000,       $rec[0]);
+        $this->assertEquals(750,        $rec[1]);
+        $this->assertEquals('Embedded', $rec[2]);
+        $this->assertEquals(751,        $rec[3]);
+
+        $this->assertEquals($rec, $reader->getRecord(101)); // 101 just points to 100's data in index block
+
+        $rec = $reader->getRecord(103);
+        $this->assertEquals(12345,          $rec[0]);
+        $this->assertEquals(98765,          $rec[1]);
+        $this->assertEquals('Strings Test', $rec[2]);
+        $this->assertEquals(43210,          $rec[3]);
+
+        $this->assertEquals($rec, $reader->getRecord(102)); // 102 just points to 103's data in index block
     }
 
     public function testBadIdField()

@@ -4,12 +4,6 @@ namespace Erorus\DB2;
 
 class Reader
 {
-    const EMBEDDED_STRING_FIELDS = [
-        0xEFBEADDE => [2], // tests/wdb5/EmbedStrings.db2
-        0x27909DB0 => [13,14,15,16,17], // item-sparse.db2 as of 7.0.3.22522 and earlier
-        0xF62C72EE => [13,14,15,16,17], // item-sparse.db2 as of 7.1.0.22900
-    ];
-
     const FIELD_TYPE_UNKNOWN = 0;
     const FIELD_TYPE_INT = 1;
     const FIELD_TYPE_FLOAT = 2;
@@ -202,14 +196,6 @@ class Reader
             $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->commonBlockSize - ($this->recordCount * 4);
             $this->indexBlockPos = $this->stringBlockSize;
             $this->stringBlockSize = 0;
-
-            if (is_null($stringFields)) {
-                if (array_key_exists($this->layoutHash, static::EMBEDDED_STRING_FIELDS)) {
-                    $stringFields = static::EMBEDDED_STRING_FIELDS[$this->layoutHash];
-                } else {
-                    throw new \Exception($this->fileName." has embedded strings, but string fields were not supplied during instantiation");
-                }
-            }
         } else {
             $this->stringBlockPos = $this->headerSize + ($this->recordCount * $this->recordSize);
         }
@@ -230,7 +216,8 @@ class Reader
             $this->recordFormat[$fieldId] = unpack('vbitShift/voffset', fread($this->fileHandle, 4));
             $this->recordFormat[$fieldId]['valueLength'] = ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
             $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['valueLength'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
-            if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN && in_array($fieldId, $stringFields)) {
+            if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
+                && !is_null($stringFields) && in_array($fieldId, $stringFields)) {
                 $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
             }
             $this->recordFormat[$fieldId]['signed'] = false;
@@ -267,6 +254,10 @@ class Reader
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
             $this->populateRecordOffsets();
+
+            if (is_null($stringFields)) {
+                $this->detectEmbeddedStringFields();
+            }
         }
 
         $this->guessFieldTypes();
@@ -336,6 +327,63 @@ class Reader
         } else {
             $this->populateIdMap();
         }
+    }
+
+    private function detectEmbeddedStringFields()
+    {
+        $stringFields = [];
+        foreach ($this->recordFormat as $fieldId => &$format) {
+            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['valueLength'] != 4) {
+                continue;
+            }
+
+            $couldBeString = true;
+            $maxLength = 0;
+
+            $recordOffset = 0;
+            while ($couldBeString && $recordOffset < $this->recordCount) {
+                $data = $this->getRawRecord($recordOffset);
+
+                $byteOffset = 0;
+                for ($offsetFieldId = 0; $offsetFieldId < $fieldId; $offsetFieldId++) {
+                    if ($this->recordFormat[$offsetFieldId]['type'] == static::FIELD_TYPE_STRING) {
+                        for ($offsetFieldValueId = 0; $offsetFieldValueId < $this->recordFormat[$offsetFieldId]['valueCount']; $offsetFieldValueId++) {
+                            $byteOffset = strpos($data, "\x00", $byteOffset);
+                            if ($byteOffset === false) {
+                                // should never happen, we just assigned this field as a string in a prior loop!
+                                // @codeCoverageIgnoreStart
+                                throw new \Exception("Could not find end of embedded string $offsetFieldId x $offsetFieldValueId in record $recordOffset");
+                                // @codeCoverageIgnoreEnd
+                            }
+                            $byteOffset++; // skip nul byte
+                        }
+                    } else {
+                        $byteOffset += $this->recordFormat[$offsetFieldId]['valueLength'] * $this->recordFormat[$offsetFieldId]['valueCount'];
+                    }
+                }
+                for ($valuePosition = 0; $valuePosition < $format['valueCount']; $valuePosition++) {
+                    $nextEnd = strpos($data, "\x00", $byteOffset);
+                    if ($nextEnd === false) {
+                        // only happens in last field in a record, which probably isn't an embedded string anyway
+                        $couldBeString = false;
+                        break;
+                    }
+                    $testLength = $nextEnd - $byteOffset;
+                    $stringToTest = substr($data, $byteOffset, $testLength);
+                    $maxLength = max($maxLength, $testLength);
+                    $byteOffset = $nextEnd + 1;
+                    if ($testLength > 0 && mb_detect_encoding($stringToTest, 'UTF-8', true) === false) {
+                        $couldBeString = false;
+                    }
+                }
+                $recordOffset++;
+            }
+            if ($couldBeString && ($maxLength > 2 || in_array($fieldId - 1, $stringFields))) { // string fields tend to group together, with any empties towards the end
+                $stringFields[] = $fieldId;
+                $format['type'] = static::FIELD_TYPE_STRING;
+            }
+        }
+        unset($format);
     }
 
     private function guessFieldTypes() {
