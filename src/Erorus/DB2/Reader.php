@@ -653,7 +653,11 @@ class Reader
             fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
             $data = fread($this->fileHandle, $this->recordSize);
         }
-        if ($id !== false) {
+        if ($id !== false && $this->commonBlockSize) {
+            // must crop off any padding at end of standard record before appending common block fields
+            $lastFieldFormat = $this->recordFormat[$this->fieldCount - 1];
+            $data = substr($data, 0, $lastFieldFormat['offset'] + $lastFieldFormat['valueLength']);
+
             foreach ($this->commonLookup as $field => $lookup) {
                 if (isset($lookup[$id])) {
                     $data .= $lookup[$id];
