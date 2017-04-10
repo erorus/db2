@@ -71,6 +71,9 @@ class Reader
                 case 'WCH8':
                     $this->openWch7($arg);
                     break;
+                case 'XFTH':
+                    $this->openHotfix($arg);
+                    break;
                 default:
                     throw new \Exception("Unknown ADB format: ".$this->fileFormat);
             }
@@ -326,6 +329,60 @@ class Reader
             $this->populateRecordOffsets(); // also populates idMap
         } else {
             $this->populateIdMap();
+        }
+    }
+
+    private function openHotfix(Reader $sourceReader) {
+        fseek($this->fileHandle, 4);
+        $parts = array_values(unpack('V2x',fread($this->fileHandle, 4 * 2)));
+
+        $hotfixVersion          = $parts[0];
+        $this->build            = $parts[1];
+
+        $this->fieldCount       = $sourceReader->fieldCount;
+        $this->totalFieldCount  = $sourceReader->totalFieldCount;
+        $this->tableHash        = $sourceReader->tableHash;
+        $this->layoutHash       = $sourceReader->layoutHash;
+        $this->minId            = null;
+        $this->maxId            = null;
+        $this->locale           = $sourceReader->locale;
+        $this->flags            = $sourceReader->flags | 1; // force embedded strings
+        $this->idField          = $sourceReader->idField;
+
+        $this->headerSize       = 12;
+
+        $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
+        $this->hasIdBlock = ($this->flags & 4) > 0;
+
+        $this->recordFormat = $sourceReader->recordFormat;
+        foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
+            if ($fieldAttributes['type'] == static::FIELD_TYPE_INT) {
+                $fieldAttributes['valueLength'] = 4; // all ints in hotfix file are 32-bit
+                $fieldAttributes['bitShift'] = 0;
+            }
+            unset($fieldAttributes['offset']); // just to make sure we don't use them later, because they're meaningless now
+        }
+        unset($fieldAttributes);
+
+        $this->recordOffsets = [];
+        $recordHeaderSize = 4 * 7;
+
+        while (ftell($this->fileHandle) + $recordHeaderSize < $this->fileSize) {
+            $recordHeader = unpack('a4magic/Vunk1/Vunk2/Vsize/Vtable/Vid/Vunk3', fread($this->fileHandle, $recordHeaderSize));
+            if ($recordHeader['magic'] != 'XFTH') {
+                throw new \Exception(sprintf("Missing expected XFTH record header at position %d", ftell($this->fileHandle) - $recordHeaderSize));
+            }
+            if ($recordHeader['size'] == 0) {
+                continue;
+            }
+            if ($recordHeader['table'] == $this->tableHash) {
+                $this->minId = is_null($this->minId) ? $recordHeader['id'] : min($this->minId, $recordHeader['id']);
+                $this->maxId = is_null($this->maxId) ? $recordHeader['id'] : max($this->maxId, $recordHeader['id']);
+                $this->idMap[$recordHeader['id']] = $this->recordCount;
+                $this->recordOffsets[$this->recordCount] = pack('Vv', ftell($this->fileHandle), $recordHeader['size']);
+                $this->recordCount++;
+            }
+            fseek($this->fileHandle, $recordHeader['size'], SEEK_CUR);
         }
     }
 
@@ -785,6 +842,10 @@ class Reader
 
     public function loadAdb($adbPath) {
         return new Reader($adbPath, $this);
+    }
+
+    public function loadDBCache($dbCachePath) {
+        return new Reader($dbCachePath, $this);
     }
 
     // user preferences
