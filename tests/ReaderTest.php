@@ -2,6 +2,10 @@
 
 use Erorus\DB2\Reader;
 
+if (!class_exists('\PHPUnit_Framework_TestCase')) {
+    class_alias('\PHPUnit\Framework\TestCase', '\PHPUnit_Framework_TestCase');
+}
+
 class ReaderTest extends \PHPUnit_Framework_TestCase
 {
     const WDB2_PATH = __DIR__.'/wdb2';
