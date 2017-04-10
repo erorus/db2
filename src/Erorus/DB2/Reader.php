@@ -379,7 +379,7 @@ class Reader
                 $this->minId = is_null($this->minId) ? $recordHeader['id'] : min($this->minId, $recordHeader['id']);
                 $this->maxId = is_null($this->maxId) ? $recordHeader['id'] : max($this->maxId, $recordHeader['id']);
                 $this->idMap[$recordHeader['id']] = $this->recordCount;
-                $this->recordOffsets[$this->recordCount] = pack('Vv', ftell($this->fileHandle), $recordHeader['size']);
+                $this->recordOffsets[$this->recordCount] = ['pos' => ftell($this->fileHandle), 'size' => $recordHeader['size']];
                 $this->recordCount++;
             }
             fseek($this->fileHandle, $recordHeader['size'], SEEK_CUR);
@@ -580,13 +580,10 @@ class Reader
         $seenBefore = [];
         for ($x = $lowerBound; $x <= $upperBound; $x++) {
             if ($this->hasIdsInIndexBlock) {
-                $bytes = fread($this->fileHandle, 10);
-                $pointer = unpack('Vid/Vpos/vsize', $bytes);
-                $bytes = substr($bytes, 4); // crop off ID in front to match other case
+                $pointer = unpack('Vid/Vpos/vsize', fread($this->fileHandle, 10));
                 $this->idMap[$pointer['id']] = $x;
             } else {
-                $bytes = fread($this->fileHandle, 6);
-                $pointer = unpack('Vpos/vsize', $bytes);
+                $pointer = unpack('Vpos/vsize', fread($this->fileHandle, 6));
                 $pointer['id'] = $x;
             }
             if ($pointer['size'] > 0) {
@@ -603,7 +600,7 @@ class Reader
                     }
                 }
                 if (isset($this->idMap[$pointer['id']])) {
-                    $this->recordOffsets[$this->idMap[$pointer['id']]] = $bytes;
+                    $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
                     foreach ($seenBefore[$pointer['pos']] as $anotherId) {
                         if (!isset($this->idMap[$anotherId])) {
                             //echo "Mapping previously seen $anotherId to match $pointer['id']\n";
@@ -698,7 +695,7 @@ class Reader
 
     private function getRawRecord($recordOffset, $id = false) {
         if (!is_null($this->recordOffsets)) {
-            $pointer = unpack('Vpos/vsize', $this->recordOffsets[$recordOffset]);
+            $pointer = $this->recordOffsets[$recordOffset];
             if ($pointer['size'] == 0) {
                 // @codeCoverageIgnoreStart
                 throw new \Exception("Requested record offset $recordOffset which is empty");
