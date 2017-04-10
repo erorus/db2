@@ -2,7 +2,7 @@
 
 use Erorus\DB2\Reader;
 
-class ReaderTest extends \PHPUnit\Framework\TestCase
+class ReaderTest extends \PHPUnit_Framework_TestCase
 {
     const WDB2_PATH = __DIR__.'/wdb2';
     const WDB5_PATH = __DIR__.'/wdb5';
