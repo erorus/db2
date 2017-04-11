@@ -356,8 +356,8 @@ class Reader
 
         $this->recordFormat = $sourceReader->recordFormat;
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
-            if ($fieldAttributes['type'] == static::FIELD_TYPE_INT) {
-                $fieldAttributes['valueLength'] = 4; // all ints in hotfix file are 32-bit
+            if ($fieldAttributes['type'] == static::FIELD_TYPE_INT && $fieldAttributes['valueLength'] == 3) {
+                $fieldAttributes['valueLength'] = 4;
                 $fieldAttributes['bitShift'] = 0;
             }
             unset($fieldAttributes['offset']); // just to make sure we don't use them later, because they're meaningless now
