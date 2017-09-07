@@ -621,12 +621,31 @@ class Reader
             return;
         }
 
+        $commonBlockEnd = $this->commonBlockPos + $this->commonBlockSize; // usually this is EOF anyway, but in case they add another block...
+
         fseek($this->fileHandle, $this->commonBlockPos);
         $fieldCount = current(unpack('V', fread($this->fileHandle, 4)));
         if ($fieldCount != $this->totalFieldCount) {
             throw new \Exception(sprintf("Expected %d fields in common block, found %d", $this->totalFieldCount, $fieldCount));
         }
 
+        // determine whether each table entry data is stored in 4 bytes (7.3 onward), or fewer bytes depending on type (pre-7.3)
+        $fourBytesEveryType = true;
+        for ($field = 0; $field < $this->totalFieldCount; $field++) {
+            list($entryCount, $enumType) = array_values(unpack('V1x/C1y', fread($this->fileHandle, 5)));
+            $mapSize = 8 * $entryCount;
+
+            if (($enumType > 4) ||
+                ($entryCount > $this->recordCount) ||
+                (ftell($this->fileHandle) + $mapSize + ($field + 1 < $this->totalFieldCount ? 5 : 0) > $commonBlockEnd)) {
+                $fourBytesEveryType = false;
+                break;
+            }
+            fseek($this->fileHandle, $mapSize, SEEK_CUR); // skip this field's data, continue to the next
+        }
+        $fourBytesEveryType &= $commonBlockEnd - ftell($this->fileHandle) <= 8; // expect to be near the end of the common block if our assumptions held
+
+        fseek($this->fileHandle, $this->commonBlockPos + 4); // return to first table entry
         for ($field = 0; $field < $this->totalFieldCount; $field++) {
             list($entryCount, $enumType) = array_values(unpack('V1x/C1y', fread($this->fileHandle, 5)));
             if ($field < $this->fieldCount) {
@@ -685,7 +704,9 @@ class Reader
                     $this->commonLookup[$field][$id] = stream_get_line($this->fileHandle, $maxLength, "\x00") . "\x00";
                     // @codeCoverageIgnoreEnd
                 } else {
-                    $this->commonLookup[$field][$id] = fread($this->fileHandle, $size);
+                    $this->commonLookup[$field][$id] = ($fourBytesEveryType && $size != 4) ?
+                        substr(fread($this->fileHandle, 4), 0, $size) :
+                        fread($this->fileHandle, $size);
                 }
             }
         }
