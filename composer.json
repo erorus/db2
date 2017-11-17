@@ -1,0 +1,21 @@
+{
+    "name": "erorus/db2",
+    "description": "DB2 Reader for World of Warcraft data files",
+    "version": "1.0.0",
+    "homepage": "https://github.com/erorus/db2",
+    "license": "Apache-2.0",
+    "authors": [
+        {
+            "name": "Erorus",
+            "email": "github@theunderminejournal.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "Erorus\\DB2\\": "src/Erorus/DB2/"
+        }
+    },
+    "require": {
+        "ext-mbstring": "*"
+    }
+}

@@ -49,19 +49,19 @@ Also check out example.php, which is what I'm using during development.
 
 ## Compatibility
 
-Works best with the WDB5 and WDB6 formats, which are used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, the nonzero block, and including Item-sparse with its embedded strings. Other files with embedded strings will need you to identify the string fields.
+Works best with the WDB6 format, which is used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, the nonzero block, and including Item-sparse with its embedded strings.
 
 Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format, which is also compatible with this library. Support for WDB2 is not as robust, as there are fewer clues regarding field types.
 
 Legion alpha already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
 
-ADB support is limited to WCH8, currently used in Legion. ADBs require their counterpart DB2 file for the necessary formatting.
+ADB support is limited to WCH8, once used in Legion. ADBs require their counterpart DB2 file for the necessary formatting. You can also load Hotfix.tbl the same way.
 
 ## Goals
 
 This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/newsstand/)) to datamine items, pets, and other entities.
 
-This is separate from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc. Eventually.
+This is separate from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc.
 
 ## Disclaimer
 
