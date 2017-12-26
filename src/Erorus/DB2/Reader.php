@@ -44,7 +44,6 @@ class Reader
     private $commonBlockSize = 0;
     private $bitpackedDataPos = 0;
     private $lookupColumnCount = 0;
-    private $offsetMapPos = 0;
     private $idListSize = 0;
     private $fieldStorageInfoPos = 0;
     private $fieldStorageInfoSize = 0;
@@ -261,7 +260,7 @@ class Reader
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
         if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+            || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
@@ -314,7 +313,7 @@ class Reader
         $this->totalFieldCount      = $parts[12];
         $this->bitpackedDataPos     = $parts[13];
         $this->lookupColumnCount    = $parts[14];
-        $this->offsetMapPos         = $parts[15];
+        $this->indexBlockPos        = $parts[15];
         $this->idListSize           = $parts[16];
         $this->fieldStorageInfoSize = $parts[17];
         $this->commonBlockSize      = $parts[18];
@@ -335,11 +334,8 @@ class Reader
                 throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
 
-            throw new \Exception("TODO: embedded strings");
-
-            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->commonBlockSize - ($this->recordCount * 4);
-            $this->indexBlockPos = $this->stringBlockSize;
             $this->stringBlockSize = 0;
+            $this->stringBlockPos = $this->indexBlockPos + 6 * ($this->maxId - $this->minId + 1);
         } else {
             $this->stringBlockPos = $this->headerSize + ($this->recordCount * $this->recordSize);
         }
@@ -363,7 +359,7 @@ class Reader
         fseek($this->fileHandle, $headerLength);
         $this->recordFormat = [];
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
-            $this->recordFormat[$fieldId] = unpack('vbitShift/voffset', fread($this->fileHandle, 4));
+            $this->recordFormat[$fieldId] = unpack('sbitShift/voffset', fread($this->fileHandle, 4));
             $this->recordFormat[$fieldId]['valueLength'] = ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
             $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
             $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
@@ -372,6 +368,19 @@ class Reader
                 $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
             }
             $this->recordFormat[$fieldId]['signed'] = false;
+            if ($fieldId > 0) {
+                $this->recordFormat[$fieldId - 1]['valueCount'] =
+                    floor(($this->recordFormat[$fieldId]['offset'] - $this->recordFormat[$fieldId - 1]['offset']) / $this->recordFormat[$fieldId - 1]['valueLength']);
+            }
+        }
+
+        $fieldId = $this->fieldCount - 1;
+        $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
+        $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
+        if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
+            (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
+            || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+            $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
         $commonBlockPointer = 0;
@@ -382,7 +391,9 @@ class Reader
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $parts = unpack($storageInfoFormat, fread($this->fileHandle, 24));
 
-            $this->recordFormat[$fieldId]['valueCount'] = max(1, $parts['arrayCount']);
+            if ($parts['arrayCount'] > 0) {
+                $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
+            }
 
             switch ($parts['storageType']) {
                 case static::FIELD_COMPRESSION_COMMON:
@@ -426,6 +437,9 @@ class Reader
 
         if ($this->hasEmbeddedStrings) {
             for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+                if ($this->recordFormat[$fieldId]['storage']['storageType'] != static::FIELD_COMPRESSION_NONE) {
+                    throw new \Exception("DB2 with Embedded Strings has compressed field $fieldId");
+                }
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
             $this->populateRecordOffsets();
@@ -1001,7 +1015,7 @@ class Reader
             $field = [];
             $format = $this->recordFormat[$fieldId];
             for ($valueId = 0; $valueId < $format['valueCount']; $valueId++) {
-                if (isset($format['storage'])) {
+                if (isset($format['storage']) && !$this->hasEmbeddedStrings) {
                     $rawValue = substr($record, $format['offset'], $format['valueLength']);
                     switch ($format['storage']['storageType']) {
                         case static::FIELD_COMPRESSION_BITPACKED:
@@ -1040,6 +1054,9 @@ class Reader
                     case static::FIELD_TYPE_INT:
                         if ($format['signed']) {
                             switch ($format['size']) {
+                                case 8:
+                                    $field[] = current(unpack('q', $rawValue));
+                                    break;
                                 case 4:
                                     $field[] = current(unpack('l', $rawValue));
                                     break;
@@ -1054,7 +1071,11 @@ class Reader
                                     break;
                             }
                         } else {
-                            $field[] = current(unpack('V', str_pad($rawValue, 4, "\x00", STR_PAD_RIGHT)));
+                            if ($format['size'] == 8) {
+                                $field[] = current(unpack('P', $rawValue));
+                            } else {
+                                $field[] = current(unpack('V', str_pad($rawValue, 4, "\x00", STR_PAD_RIGHT)));
+                            }
                         }
                         break;
                     case static::FIELD_TYPE_FLOAT:
