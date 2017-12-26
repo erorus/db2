@@ -34,8 +34,8 @@ foreach ($reader->generateRecords() as $id => $record) {
 
     echo "\n";
 
-    if (++$recordNum >= 20) {
-        break;
+    if (++$recordNum >= 3) {
+        //break;
     }
 }
 

@@ -11,6 +11,12 @@ class Reader
 
     const DISTINCT_STRINGS_REQUIRED = 5;
 
+    const FIELD_COMPRESSION_NONE = 0;
+    const FIELD_COMPRESSION_BITPACKED = 1;
+    const FIELD_COMPRESSION_COMMON = 2;
+    const FIELD_COMPRESSION_BITPACKED_INDEXED = 3;
+    const FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY = 4;
+
     private $fileHandle;
     private $fileFormat = '';
     private $fileName = '';
@@ -19,7 +25,9 @@ class Reader
     private $headerSize = 0;
     private $recordCount = 0;
     private $fieldCount = 0;
+    private $totalFieldCount = 0;
     private $recordSize = 0;
+    private $stringBlockPos = 0;
     private $stringBlockSize = 0;
     private $tableHash = 0;
     private $layoutHash = 0;
@@ -28,21 +36,31 @@ class Reader
     private $minId = 0;
     private $maxId = 0;
     private $locale = 0;
+    private $copyBlockPos = 0;
     private $copyBlockSize = 0;
     private $flags = 0;
-    private $totalFieldCount = 0;
+
+    private $commonBlockPos = 0;
     private $commonBlockSize = 0;
+    private $bitpackedDataPos = 0;
+    private $lookupColumnCount = 0;
+    private $offsetMapPos = 0;
+    private $idListSize = 0;
+    private $fieldStorageInfoPos = 0;
+    private $fieldStorageInfoSize = 0;
+    private $palletDataPos = 0;
+    private $palletDataSize = 0;
+    private $relationshipDataPos = 0;
+    private $relationshipDataSize = 0;
+
     private $idField = -1;
 
     private $hasEmbeddedStrings = false;
     private $hasIdBlock = false;
     private $hasIdsInIndexBlock = false;
 
-    private $stringBlockPos = 0;
     private $indexBlockPos = 0;
     private $idBlockPos = 0;
-    private $copyBlockPos = 0;
-    private $commonBlockPos = 0;
 
     private $recordFormat = [];
     
@@ -89,6 +107,12 @@ class Reader
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
                     $this->openWdb5($arg);
+                    break;
+                case 'WDC1':
+                    if (!is_null($arg) && !is_array($arg)) {
+                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                    }
+                    $this->openWdc1($arg);
                     break;
                 default:
                     throw new \Exception("Unknown DB2 format: ".$this->fileFormat);
@@ -146,6 +170,7 @@ class Reader
                 'bitShift' => 0,
                 'offset' => $fieldId * 4,
                 'valueLength' => 4,
+                'size' => 4,
                 'valueCount' => 1,
                 'type' => static::FIELD_TYPE_UNKNOWN,
                 'signed' => false,
@@ -218,7 +243,8 @@ class Reader
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $this->recordFormat[$fieldId] = unpack('vbitShift/voffset', fread($this->fileHandle, 4));
             $this->recordFormat[$fieldId]['valueLength'] = ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
-            $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['valueLength'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
+            $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
+            $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
             if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
                 && !is_null($stringFields) && in_array($fieldId, $stringFields)) {
                 $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
@@ -235,7 +261,7 @@ class Reader
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
         if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-            || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
@@ -249,6 +275,178 @@ class Reader
         }
 
         $this->findCommonFields();
+
+        $this->populateIdMap();
+
+        if ($this->hasEmbeddedStrings) {
+            for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+                unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
+            }
+            $this->populateRecordOffsets();
+
+            if (is_null($stringFields)) {
+                $this->detectEmbeddedStringFields();
+            }
+        }
+
+        $this->guessFieldTypes();
+    }
+
+    private function openWdc1($stringFields) {
+        $headerLength = 84;
+        $headerFormat = 'V10x/v2y/V9z';
+
+        fseek($this->fileHandle, 4);
+        $parts = array_values(unpack($headerFormat, fread($this->fileHandle, $headerLength - 4)));
+
+        $this->recordCount          = $parts[0];
+        $this->fieldCount           = $parts[1];
+        $this->recordSize           = $parts[2];
+        $this->stringBlockSize      = $parts[3];
+        $this->tableHash            = $parts[4];
+        $this->layoutHash           = $parts[5];
+        $this->minId                = $parts[6];
+        $this->maxId                = $parts[7];
+        $this->locale               = $parts[8];
+        $this->copyBlockSize        = $parts[9];
+        $this->flags                = $parts[10];
+        $this->idField              = $parts[11];
+        $this->totalFieldCount      = $parts[12];
+        $this->bitpackedDataPos     = $parts[13];
+        $this->lookupColumnCount    = $parts[14];
+        $this->offsetMapPos         = $parts[15];
+        $this->idListSize           = $parts[16];
+        $this->fieldStorageInfoSize = $parts[17];
+        $this->commonBlockSize      = $parts[18];
+        $this->palletDataSize       = $parts[19];
+        $this->relationshipDataSize = $parts[20];
+
+        $this->headerSize = $headerLength + $this->fieldCount * 4;
+
+        $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
+        $this->hasIdBlock = ($this->flags & 4) > 0;
+
+        if ($this->fieldStorageInfoSize != $this->totalFieldCount * 24) {
+            throw new \Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
+        }
+
+        if ($this->hasEmbeddedStrings) {
+            if (!$this->hasIdBlock) {
+                throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
+            }
+
+            throw new \Exception("TODO: embedded strings");
+
+            $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->commonBlockSize - ($this->recordCount * 4);
+            $this->indexBlockPos = $this->stringBlockSize;
+            $this->stringBlockSize = 0;
+        } else {
+            $this->stringBlockPos = $this->headerSize + ($this->recordCount * $this->recordSize);
+        }
+        $this->idBlockPos = $this->stringBlockPos + $this->stringBlockSize;
+
+        $this->copyBlockPos = $this->idBlockPos + ($this->hasIdBlock ? $this->recordCount * 4 : 0);
+
+        $this->fieldStorageInfoPos = $this->copyBlockPos + $this->copyBlockSize;
+
+        $this->palletDataPos = $this->fieldStorageInfoPos + $this->fieldStorageInfoSize;
+
+        $this->commonBlockPos = $this->palletDataPos + $this->palletDataSize;
+
+        $this->relationshipDataPos = $this->commonBlockPos + $this->commonBlockSize;
+
+        $eof = $this->relationshipDataPos + $this->relationshipDataSize;
+        if ($eof != $this->fileSize) {
+            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+        }
+
+        fseek($this->fileHandle, $headerLength);
+        $this->recordFormat = [];
+        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+            $this->recordFormat[$fieldId] = unpack('vbitShift/voffset', fread($this->fileHandle, 4));
+            $this->recordFormat[$fieldId]['valueLength'] = ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
+            $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
+            $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
+            if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
+                && !is_null($stringFields) && in_array($fieldId, $stringFields)) {
+                $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
+            }
+            $this->recordFormat[$fieldId]['signed'] = false;
+        }
+
+        $commonBlockPointer = 0;
+        $palletBlockPointer = 0;
+
+        fseek($this->fileHandle, $this->fieldStorageInfoPos);
+        $storageInfoFormat = 'voffsetBits/vsizeBits/VadditionalDataSize/VstorageType/VbitpackOffsetBits/VbitpackSizeBits/VarrayCount';
+        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+            $parts = unpack($storageInfoFormat, fread($this->fileHandle, 24));
+
+            $this->recordFormat[$fieldId]['valueCount'] = max(1, $parts['arrayCount']);
+
+            switch ($parts['storageType']) {
+                case static::FIELD_COMPRESSION_COMMON:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $parts['defaultValue'] = pack('V', $parts['bitpackOffsetBits']);
+                    $parts['bitpackOffsetBits'] = 0;
+                    $parts['blockOffset'] = $commonBlockPointer;
+                    $commonBlockPointer += $parts['additionalDataSize'];
+                    break;
+                case static::FIELD_COMPRESSION_BITPACKED:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
+                    $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    break;
+                case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
+                case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
+                    $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    $parts['blockOffset'] = $palletBlockPointer;
+                    $palletBlockPointer += $parts['additionalDataSize'];
+                    break;
+            }
+
+            $this->recordFormat[$fieldId]['storage'] = $parts;
+        }
+
+        if (!$this->hasIdBlock) {
+            if ($this->idField >= $this->fieldCount) {
+                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
+            }
+            if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
+                throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
+            }
+        }
+        //print_r($this);
+
+/*
+        exit;
+
+
+        $binbit = function($bin) {
+            $bits = '';
+            for ($x = 0; $x < strlen($bin); $x++) {
+                $bits .= ($bits ? ' ' : '') . str_pad(decbin(ord(substr($bin, $x, 1))), 8, '0', STR_PAD_LEFT);
+            }
+            return $bits;
+        };
+
+        $bitString = "\xC0\xfd\xc2\x00";
+        $offset = 6;
+        $length = 21;
+        echo sprintf("Offset: %d  Length %d\nFrom %s\n  to %s (%d)\n\n", $offset, $length,
+            $binbit($bitString),
+            chunk_split(str_pad($z = decbin($zz = static::extractValueFromBitstring($bitString, $offset, $length)),
+                ceil(strlen($z) / 8) * 8, '0', STR_PAD_LEFT), 8, ' '), $zz);
+        exit;
+
+        print_r($this->recordFormat[30]);
+/* */
+
 
         $this->populateIdMap();
 
@@ -358,6 +556,7 @@ class Reader
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
             if ($fieldAttributes['type'] == static::FIELD_TYPE_INT && $fieldAttributes['valueLength'] == 3) {
                 $fieldAttributes['valueLength'] = 4;
+                $fieldAttributes['size'] = 4;
                 $fieldAttributes['bitShift'] = 0;
             }
             unset($fieldAttributes['offset']); // just to make sure we don't use them later, because they're meaningless now
@@ -390,7 +589,7 @@ class Reader
     {
         $stringFields = [];
         foreach ($this->recordFormat as $fieldId => &$format) {
-            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['valueLength'] != 4) {
+            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['size'] != 4) {
                 continue;
             }
 
@@ -445,7 +644,7 @@ class Reader
 
     private function guessFieldTypes() {
         foreach ($this->recordFormat as $fieldId => &$format) {
-            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['valueLength'] != 4) {
+            if ($format['type'] != static::FIELD_TYPE_UNKNOWN || $format['size'] != 4) {
                 continue;
             }
 
@@ -527,10 +726,9 @@ class Reader
         $this->idMap = [];
         if (!$this->hasIdBlock) {
             $this->recordFormat[$this->idField]['signed'] = false; // in case it's a 32-bit int
-            $fieldFormat = $this->recordFormat[$this->idField];
             for ($x = 0; $x < $this->recordCount; $x++) {
-                fseek($this->fileHandle, $this->headerSize + $x * $this->recordSize + $fieldFormat['offset']);
-                $this->idMap[current(unpack('V', str_pad(fread($this->fileHandle, $fieldFormat['valueLength']), 4, "\x00", STR_PAD_RIGHT)))] = $x;
+                $rec = $this->getRecordByOffset($x, false);
+                $this->idMap[$rec[$this->idField]] = $x;
             }
         } else {
             fseek($this->fileHandle, $this->idBlockPos);
@@ -616,12 +814,14 @@ class Reader
     }
 
     private function findCommonFields() {
+        // WDB6 only
+
         $this->commonLookup = [];
         if ($this->commonBlockSize == 0) {
             return;
         }
 
-        $commonBlockEnd = $this->commonBlockPos + $this->commonBlockSize; // usually this is EOF anyway, but in case they add another block...
+        $commonBlockEnd = $this->commonBlockPos + $this->commonBlockSize;
 
         fseek($this->fileHandle, $this->commonBlockPos);
         $fieldCount = current(unpack('V', fread($this->fileHandle, 4)));
@@ -680,6 +880,7 @@ class Reader
             $this->recordFormat[$field] = [
                 'valueCount'  => 1,
                 'valueLength' => $size,
+                'size'        => $size,
                 'type'        => $type,
                 'signed'      => false,
                 'zero'        => str_repeat("\x00", $size),
@@ -726,6 +927,7 @@ class Reader
             $data = fread($this->fileHandle, $pointer['size']);
         } else {
             fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
+//            echo sprintf("Fetching record of size %d at position %d\n", $this->recordSize, ftell($this->fileHandle));
             $data = fread($this->fileHandle, $this->recordSize);
         }
         if ($id !== false && $this->commonBlockSize) {
@@ -742,6 +944,76 @@ class Reader
             }
         }
         return $data;
+    }
+
+    // returns unsigned 32-bit int from little endian
+    private function extractValueFromBitstring($bitString, $bitOffset, $bitLength) {
+
+        //echo sprintf("Fetching %d length from %d offset of %s string\n", $bitLength, $bitOffset, bin2hex($bitString));
+
+        if ($bitOffset >= 8) {
+            $bitString = substr($bitString, floor($bitOffset / 8));
+            $bitOffset &= 7;
+        }
+
+        //$bitString = str_pad(substr($bitString, 0, 4), 4, "\x00", STR_PAD_RIGHT);
+
+        $gmp = gmp_import($bitString, 1, GMP_LSW_FIRST | GMP_LITTLE_ENDIAN);
+        //$mask = (gmp_init(0xFFFFFFFF) << (32 - $bitLength)) & 0xFFFFFFFF;
+        $mask = ((gmp_init(1) << $bitLength) - 1);
+
+        //echo sprintf("value is %d mask is %s\n", gmp_intval($gmp >> $bitOffset), dechex(gmp_intval($mask)));
+
+        $gmp = gmp_and($gmp >> $bitOffset, $mask);
+        //if ($bitLength < 8) {
+        //    $gmp = $gmp >> (8 - $bitLength);
+        //}
+
+        return gmp_intval($gmp);
+
+        //return current(unpack('V', str_pad(gmp_export($gmp), 4, "\x00", STR_PAD_RIGHT)));
+
+        //return (current(unpack('V', str_pad($bitString, 4, "\x00", STR_PAD_RIGHT))) >> $bitOffset) & (pow(2, $bitLength) - 1);
+
+    }
+
+    private function getPalletData($storage, $palletId, $valueId) {
+        $recordSize = 4;
+        $isArray = $storage['storageType'] == static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY;
+        if ($isArray) {
+            $recordSize *= $storage['arrayCount'];
+        }
+
+        $offset = $palletId * $recordSize + $valueId * $recordSize;
+        if ($offset > $this->palletDataSize) {
+            throw new \Exception(sprintf("Requested pallet data offset %d which is beyond pallet data size %d", $offset, $this->palletDataSize));
+        }
+        fseek($this->fileHandle, $this->palletDataPos + $offset);
+
+        return current(unpack('V', fread($this->fileHandle, 4)));
+    }
+
+    private function getCommonData($storage, $id) {
+        // WDC1 and up
+
+        $lo = 0;
+        $hi = floor($storage['additionalDataSize'] / 8) - 1; // each common data record is 8 bytes: uint key, uint value
+
+        while ($lo <= $hi) {
+            $mid = (int)(($hi - $lo) / 2) + $lo;
+            fseek($this->fileHandle, $this->commonBlockPos + $storage['blockOffset'] + ($mid * 8));
+            $thisId = current(unpack('V', fread($this->fileHandle, 4)));
+
+            if ($thisId < $id) {
+                $lo = $mid + 1;
+            } elseif ($thisId > $id) {
+                $hi = $mid - 1;
+            } else {
+                return fread($this->fileHandle, 4);
+            }
+        }
+
+        return $storage['defaultValue'];
     }
 
     private function getString($stringBlockOffset) {
@@ -771,20 +1043,47 @@ class Reader
             $field = [];
             $format = $this->recordFormat[$fieldId];
             for ($valueId = 0; $valueId < $format['valueCount']; $valueId++) {
-                if ($this->hasEmbeddedStrings && $format['type'] == static::FIELD_TYPE_STRING) {
-                    $rawValue = substr($record, $runningOffset, strpos($record, "\x00", $runningOffset) - $runningOffset);
-                    $runningOffset += strlen($rawValue) + 1;
-                    $field[] = $rawValue;
-                    continue;
+                if (isset($format['storage'])) {
+                    $rawValue = substr($record, $format['offset'], $format['valueLength']);
+                    switch ($format['storage']['storageType']) {
+                        case static::FIELD_COMPRESSION_BITPACKED:
+                        case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
+                        case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
+
+                            //echo json_encode($format), "\n";
+
+                            $rawValue = static::extractValueFromBitstring($rawValue,
+                                $format['storage']['offsetBits'] % 8, $format['storage']['sizeBits']);
+
+                            if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED) {
+                                $field[] = $rawValue;
+                                continue 2; // we're done, rawvalue is actual value
+                            }
+
+                            $field[] = $this->getPalletData($format['storage'], $rawValue, $valueId);
+                            continue 2;
+                        case static::FIELD_COMPRESSION_COMMON:
+                            $rawValue = $this->getCommonData($format['storage'], $id);
+                            break;
+                    }
                 } else {
-                    $rawValue = substr($record, $runningOffset, $format['valueLength']);
-                    $runningOffset += $format['valueLength'];
+                    if ($this->hasEmbeddedStrings && $format['type'] == static::FIELD_TYPE_STRING) {
+                        $rawValue = substr($record, $runningOffset,
+                            strpos($record, "\x00", $runningOffset) - $runningOffset);
+                        $runningOffset += strlen($rawValue) + 1;
+                        $field[] = $rawValue;
+                        continue;
+                    } else {
+                        $rawValue = substr($record, $runningOffset, $format['valueLength']);
+                        $runningOffset += $format['valueLength'];
+                    }
                 }
+
                 switch ($format['type']) {
                     case static::FIELD_TYPE_UNKNOWN:
                     case static::FIELD_TYPE_INT:
                         if ($format['signed']) {
-                            switch ($format['valueLength']) {
+                            switch ($format['size']) {
                                 case 4:
                                     $field[] = current(unpack('l', $rawValue));
                                     break;

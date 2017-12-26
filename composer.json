@@ -16,6 +16,7 @@
         }
     },
     "require": {
-        "ext-mbstring": "*"
+        "ext-mbstring": "*",
+        "ext-gmp": "*"
     }
 }
