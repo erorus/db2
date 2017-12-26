@@ -4,9 +4,11 @@
 
 This is a small library to read DB2 and ADB files (data tables) from World of Warcraft.
 
-## Installation
+## Requirements
 
-Just copy the class file into your project and include it where you want to use it. Eventually I want to make this compatible with Composer, but that's not done yet.
+This was developed using 64-bit PHP 7. Tests are also run against PHP 5.6. 64-bit versions are recommended to support unsigned 32-bit ints and 64-bit ints.
+
+Mbstring extension is required for all formats, and gmp extension is required for WDC1 support.
 
 ## Usage
 
@@ -49,21 +51,28 @@ Also check out example.php, which is what I'm using during development.
 
 ## Compatibility
 
-Works best with the WDB6 format, which is used in World of Warcraft: Legion. It should work well for most DB2 files, with support for embedded IDs, ID blocks, the copy block, the nonzero block, and including Item-sparse with its embedded strings.
+| Version | Format | Works | Unit Tests |
+|---------|--------|-------|-------|
+| 3.x - 6.x | WDB2 | Yes | Yes |
+| 7.0.1 | WDB3 | No | No |
+| 7.0.3 | WDB4 | No | No |
+| 7.0.3 - 7.2.0 | WDB5 | Yes | Yes |
+| 7.0.3 - 7.2.0 | WCH7/8 | Yes | No |
+| 7.2.0 - 7.3.2 | WDB6 | Yes | Yes |
+| 7.2.0 - ? | Hotfix.tbl | Yes | No |
+| 7.3.5 - ? | WDC1 | Yes | No |
 
-Warlords of Draenor (and Cataclysm, and Mists of Pandaria) uses the WDB2 format, which is also compatible with this library. Support for WDB2 is not as robust, as there are fewer clues regarding field types.
+All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc).
 
-Legion alpha already went through WDB3 and WDB4, and I do not intend to support those versions, as the record structure for those formats is stored in the WoW executable.
-
-ADB support is limited to WCH8, once used in Legion. ADBs require their counterpart DB2 file for the necessary formatting. You can also load Hotfix.tbl the same way.
+ADBs/DBCache/Hotfix require their counterpart DB2 file for necessary metadata.
 
 ## Goals
 
 This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/newsstand/)) to datamine items, pets, and other entities.
 
-This is separate from the rest of Newsstand because I'd like to work on best practices with PSRs, unit tests, composer compatibility, etc.
+## Disclaimers
 
-## Disclaimer
+WDC1 support is preliminary and could use further improvements and code cleanup.
 
 This work is neither endorsed by nor affiliated with Blizzard Entertainment.
 
