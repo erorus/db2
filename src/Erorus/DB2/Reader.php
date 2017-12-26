@@ -422,30 +422,6 @@ class Reader
             }
         }
 
-        //print_r($this); exit;
-
-/*
-        $binbit = function($bin) {
-            $bits = '';
-            for ($x = 0; $x < strlen($bin); $x++) {
-                $bits .= ($bits ? ' ' : '') . str_pad(decbin(ord(substr($bin, $x, 1))), 8, '0', STR_PAD_LEFT);
-            }
-            return $bits;
-        };
-
-        $bitString = "\xC0\xfd\xc2\x00";
-        $offset = 6;
-        $length = 21;
-        echo sprintf("Offset: %d  Length %d\nFrom %s\n  to %s (%d)\n\n", $offset, $length,
-            $binbit($bitString),
-            chunk_split(str_pad($z = decbin($zz = static::extractValueFromBitstring($bitString, $offset, $length)),
-                ceil(strlen($z) / 8) * 8, '0', STR_PAD_LEFT), 8, ' '), $zz);
-        exit;
-
-        print_r($this->recordFormat[30]);
-/* */
-
-
         $this->populateIdMap();
 
         if ($this->hasEmbeddedStrings) {
@@ -925,7 +901,6 @@ class Reader
             $data = fread($this->fileHandle, $pointer['size']);
         } else {
             fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
-//            echo sprintf("Fetching record of size %d at position %d\n", $this->recordSize, ftell($this->fileHandle));
             $data = fread($this->fileHandle, $this->recordSize);
         }
         if ($this->fileFormat == 'WDB6' && $id !== false && $this->commonBlockSize) {
@@ -946,33 +921,18 @@ class Reader
 
     // returns unsigned 32-bit int from little endian
     private function extractValueFromBitstring($bitString, $bitOffset, $bitLength) {
-
-        //echo sprintf("Fetching %d length from %d offset of %s string\n", $bitLength, $bitOffset, bin2hex($bitString));
-
         if ($bitOffset >= 8) {
             $bitString = substr($bitString, floor($bitOffset / 8));
             $bitOffset &= 7;
         }
 
-        //$bitString = str_pad(substr($bitString, 0, 4), 4, "\x00", STR_PAD_RIGHT);
-
         $gmp = gmp_import($bitString, 1, GMP_LSW_FIRST | GMP_LITTLE_ENDIAN);
-        //$mask = (gmp_init(0xFFFFFFFF) << (32 - $bitLength)) & 0xFFFFFFFF;
+
         $mask = ((gmp_init(1) << $bitLength) - 1);
 
-        //echo sprintf("value is %d mask is %s\n", gmp_intval($gmp >> $bitOffset), dechex(gmp_intval($mask)));
-
         $gmp = gmp_and($gmp >> $bitOffset, $mask);
-        //if ($bitLength < 8) {
-        //    $gmp = $gmp >> (8 - $bitLength);
-        //}
 
         return gmp_intval($gmp);
-
-        //return current(unpack('V', str_pad(gmp_export($gmp), 4, "\x00", STR_PAD_RIGHT)));
-
-        //return (current(unpack('V', str_pad($bitString, 4, "\x00", STR_PAD_RIGHT))) >> $bitOffset) & (pow(2, $bitLength) - 1);
-
     }
 
     private function getPalletData($storage, $palletId, $valueId) {
@@ -1047,9 +1007,6 @@ class Reader
                         case static::FIELD_COMPRESSION_BITPACKED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
-
-                            //echo json_encode($format), "\n";
-
                             $rawValue = static::extractValueFromBitstring($rawValue,
                                 $format['storage']['offsetBits'] % 8, $format['storage']['sizeBits']);
 
@@ -1058,9 +1015,9 @@ class Reader
                                 continue 2; // we're done, rawvalue is actual value
                             }
 
-                            //echo "Field $fieldId value $valueId ";
                             $field[] = $this->getPalletData($format['storage'], $rawValue, $valueId);
                             continue 2;
+
                         case static::FIELD_COMPRESSION_COMMON:
                             $rawValue = $this->getCommonData($format['storage'], $id);
                             break;
