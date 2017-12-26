@@ -421,12 +421,10 @@ class Reader
                 throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
             }
         }
-        //print_r($this);
+
+        //print_r($this); exit;
 
 /*
-        exit;
-
-
         $binbit = function($bin) {
             $bits = '';
             for ($x = 0; $x < strlen($bin); $x++) {
@@ -930,7 +928,7 @@ class Reader
 //            echo sprintf("Fetching record of size %d at position %d\n", $this->recordSize, ftell($this->fileHandle));
             $data = fread($this->fileHandle, $this->recordSize);
         }
-        if ($id !== false && $this->commonBlockSize) {
+        if ($this->fileFormat == 'WDB6' && $id !== false && $this->commonBlockSize) {
             // must crop off any padding at end of standard record before appending common block fields
             $lastFieldFormat = $this->recordFormat[$this->fieldCount - 1];
             $data = substr($data, 0, $lastFieldFormat['offset'] + $lastFieldFormat['valueLength']);
@@ -984,7 +982,7 @@ class Reader
             $recordSize *= $storage['arrayCount'];
         }
 
-        $offset = $palletId * $recordSize + $valueId * $recordSize;
+        $offset = $storage['blockOffset'] + $palletId * $recordSize + $valueId * 4;
         if ($offset > $this->palletDataSize) {
             throw new \Exception(sprintf("Requested pallet data offset %d which is beyond pallet data size %d", $offset, $this->palletDataSize));
         }
@@ -1060,6 +1058,7 @@ class Reader
                                 continue 2; // we're done, rawvalue is actual value
                             }
 
+                            //echo "Field $fieldId value $valueId ";
                             $field[] = $this->getPalletData($format['storage'], $rawValue, $valueId);
                             continue 2;
                         case static::FIELD_COMPRESSION_COMMON:
