@@ -391,14 +391,11 @@ class Reader
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $parts = unpack($storageInfoFormat, fread($this->fileHandle, 24));
 
-            if ($parts['arrayCount'] > 0) {
-                $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
-            }
-
             switch ($parts['storageType']) {
                 case static::FIELD_COMPRESSION_COMMON:
                     $this->recordFormat[$fieldId]['size'] = 4;
                     $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['valueCount'] = 1;
                     $parts['defaultValue'] = pack('V', $parts['bitpackOffsetBits']);
                     $parts['bitpackOffsetBits'] = 0;
                     $parts['blockOffset'] = $commonBlockPointer;
@@ -409,6 +406,7 @@ class Reader
                     $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
                     $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
                     $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    $this->recordFormat[$fieldId]['valueCount'] = 1;
                     break;
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
@@ -416,8 +414,14 @@ class Reader
                     $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
                     $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
                     $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'] > 0 ? $parts['arrayCount'] : 1;
                     $parts['blockOffset'] = $palletBlockPointer;
                     $palletBlockPointer += $parts['additionalDataSize'];
+                    break;
+                case static::FIELD_COMPRESSION_NONE:
+                    if ($parts['arrayCount'] > 0) {
+                        $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
+                    }
                     break;
             }
 
