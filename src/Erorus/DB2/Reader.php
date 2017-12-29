@@ -1012,10 +1012,11 @@ class Reader
         }
 
         $record = $this->getRawRecord($recordOffset, $id);
+        $fieldMax = $id === false ? $this->fieldCount : $this->totalFieldCount; // do not search wdb6 common table when we don't know IDs yet
 
         $runningOffset = 0;
         $row = [];
-        for ($fieldId = 0; $fieldId < $this->totalFieldCount; $fieldId++) {
+        for ($fieldId = 0; $fieldId < $fieldMax; $fieldId++) {
             $field = [];
             $format = $this->recordFormat[$fieldId];
             for ($valueId = 0; $valueId < $format['valueCount']; $valueId++) {
