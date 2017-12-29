@@ -360,7 +360,7 @@ class Reader
         $this->recordFormat = [];
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $this->recordFormat[$fieldId] = unpack('sbitShift/voffset', fread($this->fileHandle, 4));
-            $this->recordFormat[$fieldId]['valueLength'] = ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
+            $this->recordFormat[$fieldId]['valueLength'] = max(1, ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8));
             $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
             $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
             if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
