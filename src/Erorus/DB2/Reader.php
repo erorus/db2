@@ -1035,6 +1035,10 @@ class Reader
                         case static::FIELD_COMPRESSION_COMMON:
                             $rawValue = $this->getCommonData($format['storage'], $id);
                             break;
+
+                        case static::FIELD_COMPRESSION_NONE:
+                            $rawValue = substr($record, $format['offset'] + $valueId * $format['valueLength'], $format['valueLength']);
+                            break;
                     }
                 } else {
                     if ($this->hasEmbeddedStrings && $format['type'] == static::FIELD_TYPE_STRING) {
