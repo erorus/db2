@@ -437,6 +437,20 @@ class Reader
             }
         }
 
+        if ($this->relationshipDataSize) {
+            $this->recordFormat[$this->totalFieldCount++] = [
+                'valueLength' => 4,
+                'size' => 4,
+                'offset' => $this->recordSize,
+                'type' => static::FIELD_TYPE_INT,
+                'valueCount' => 1,
+                'signed' => false,
+                'storage' => [
+                    'storageType' => static::FIELD_COMPRESSION_NONE
+                ]
+            ];
+        }
+
         $this->populateIdMap();
 
         if ($this->hasEmbeddedStrings) {
@@ -921,6 +935,7 @@ class Reader
             fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
             $data = fread($this->fileHandle, $this->recordSize);
         }
+
         if ($this->fileFormat == 'WDB6' && $id !== false && $this->commonBlockSize) {
             // must crop off any padding at end of standard record before appending common block fields
             $lastFieldFormat = $this->recordFormat[$this->fieldCount - 1];
@@ -932,6 +947,23 @@ class Reader
                 } else {
                     $data .= $this->recordFormat[$field]['zero'];
                 }
+            }
+        }
+
+        if ($this->relationshipDataSize) {
+            $relationshipPos = $recordOffset * 8 + 12;
+            if ($relationshipPos >= $this->relationshipDataSize) {
+                throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
+                    $relationshipPos, $this->relationshipDataSize));
+            }
+
+            fseek($this->fileHandle, $this->relationshipDataPos + $relationshipPos);
+            $data .= fread($this->fileHandle, 4);
+
+            $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
+            if ($relationshipOffset != $recordOffset) {
+                throw new \Exception(sprintf("Record offset %d attempted read of relationship offset %d",
+                    $recordOffset, $relationshipOffset));
             }
         }
         return $data;
@@ -1021,12 +1053,11 @@ class Reader
             $format = $this->recordFormat[$fieldId];
             for ($valueId = 0; $valueId < $format['valueCount']; $valueId++) {
                 if (isset($format['storage']) && !$this->hasEmbeddedStrings) {
-                    $rawValue = substr($record, $format['offset'], $format['valueLength']);
                     switch ($format['storage']['storageType']) {
                         case static::FIELD_COMPRESSION_BITPACKED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
-                            $rawValue = static::extractValueFromBitstring($rawValue,
+                            $rawValue = static::extractValueFromBitstring(substr($record, $format['offset'], $format['valueLength']),
                                 $format['storage']['offsetBits'] % 8, $format['storage']['sizeBits']);
 
                             if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED) {
@@ -1044,6 +1075,9 @@ class Reader
                         case static::FIELD_COMPRESSION_NONE:
                             $rawValue = substr($record, $format['offset'] + $valueId * $format['valueLength'], $format['valueLength']);
                             break;
+
+                        default:
+                            throw new \Exception(sprintf("Field %d has an unknown storage type: %d", $fieldId, $format['storage']['storageType']));
                     }
                 } else {
                     if ($this->hasEmbeddedStrings && $format['type'] == static::FIELD_TYPE_STRING) {
