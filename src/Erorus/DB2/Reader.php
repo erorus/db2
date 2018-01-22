@@ -732,9 +732,23 @@ class Reader
         $this->idMap = [];
         if (!$this->hasIdBlock) {
             $this->recordFormat[$this->idField]['signed'] = false; // in case it's a 32-bit int
+            $idShortcut = !isset($this->recordFormat[$this->idField]['storage']) || $this->recordFormat[$this->idField]['storage']['storageType'] == static::FIELD_COMPRESSION_NONE;
+            if ($idShortcut) {
+                $idShortcut = $this->recordFormat[$this->idField]['offset'];
+                if (isset($this->recordFormat[$this->idField]['storage'])) {
+                    $idShortcut = floor($this->recordFormat[$this->idField]['storage']['offsetBits'] / 4);
+                }
+            }
             for ($x = 0; $x < $this->recordCount; $x++) {
-                $rec = $this->getRecordByOffset($x, false);
-                $this->idMap[$rec[$this->idField]] = $x;
+                // attempt shortcut so we don't have to parse the whole record
+                if ($idShortcut !== false) {
+                    $rec = $this->getRawRecord($x);
+                    $id = current(unpack('V', str_pad(substr($rec, $idShortcut, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
+                } else {
+                    $rec = $this->getRecordByOffset($x, false);
+                    $id = $rec[$this->idField];
+                }
+                $this->idMap[$id] = $x;
             }
         } else {
             fseek($this->fileHandle, $this->idBlockPos);
