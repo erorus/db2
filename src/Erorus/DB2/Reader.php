@@ -742,8 +742,8 @@ class Reader
             for ($x = 0; $x < $this->recordCount; $x++) {
                 // attempt shortcut so we don't have to parse the whole record
                 if ($idShortcut !== false) {
-                    $rec = $this->getRawRecord($x);
-                    $id = current(unpack('V', str_pad(substr($rec, $idShortcut, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
+                    fseek($this->fileHandle, $this->headerSize + $x * $this->recordSize + $idShortcut);
+                    $id = current(unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
                 } else {
                     $rec = $this->getRecordByOffset($x, false);
                     $id = $rec[$this->idField];
