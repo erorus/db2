@@ -735,9 +735,6 @@ class Reader
             $idShortcut = !isset($this->recordFormat[$this->idField]['storage']) || $this->recordFormat[$this->idField]['storage']['storageType'] == static::FIELD_COMPRESSION_NONE;
             if ($idShortcut) {
                 $idShortcut = $this->recordFormat[$this->idField]['offset'];
-                if (isset($this->recordFormat[$this->idField]['storage'])) {
-                    $idShortcut = floor($this->recordFormat[$this->idField]['storage']['offsetBits'] / 4);
-                }
             }
             for ($x = 0; $x < $this->recordCount; $x++) {
                 // attempt shortcut so we don't have to parse the whole record
