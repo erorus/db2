@@ -1015,27 +1015,24 @@ class Reader
         return current(unpack('V', fread($this->fileHandle, 4)));
     }
 
-    private function getCommonData($storage, $id) {
+    private function getCommonData($fieldId, $id) {
         // WDC1 and up
 
-        $lo = 0;
-        $hi = floor($storage['additionalDataSize'] / 8) - 1; // each common data record is 8 bytes: uint key, uint value
+        if (!isset($this->recordFormat[$fieldId]['commonCache'])) {
+            $this->recordFormat[$fieldId]['commonCache'] = [];
 
-        while ($lo <= $hi) {
-            $mid = (int)(($hi - $lo) / 2) + $lo;
-            fseek($this->fileHandle, $this->commonBlockPos + $storage['blockOffset'] + ($mid * 8));
-            $thisId = current(unpack('V', fread($this->fileHandle, 4)));
+            fseek($this->fileHandle, $this->commonBlockPos + $this->recordFormat[$fieldId]['storage']['blockOffset']);
+            $numCommonRecs = floor($this->recordFormat[$fieldId]['storage']['additionalDataSize'] / 8) - 1;
 
-            if ($thisId < $id) {
-                $lo = $mid + 1;
-            } elseif ($thisId > $id) {
-                $hi = $mid - 1;
-            } else {
-                return fread($this->fileHandle, 4);
+            for ($x = 0; $x < $numCommonRecs; $x++) {
+                $commonId = current(unpack('V', fread($this->fileHandle, 4)));
+                $this->recordFormat[$fieldId]['commonCache'][$commonId] = fread($this->fileHandle, 4);
             }
         }
 
-        return $storage['defaultValue'];
+        return isset($this->recordFormat[$fieldId]['commonCache'][$id]) ?
+            $this->recordFormat[$fieldId]['commonCache'][$id] :
+            $this->recordFormat[$fieldId]['storage']['defaultValue'];
     }
 
     private function getString($stringBlockOffset) {
@@ -1083,7 +1080,7 @@ class Reader
                             continue 2;
 
                         case static::FIELD_COMPRESSION_COMMON:
-                            $rawValue = $this->getCommonData($format['storage'], $id);
+                            $rawValue = $this->getCommonData($fieldId, $id);
                             break;
 
                         case static::FIELD_COMPRESSION_NONE:
@@ -1131,7 +1128,10 @@ class Reader
                             if ($format['size'] == 8) {
                                 $field[] = current(unpack('P', $rawValue));
                             } else {
-                                $field[] = current(unpack('V', str_pad($rawValue, 4, "\x00", STR_PAD_RIGHT)));
+                                if ($format['size'] < 4) {
+                                    $rawValue = str_pad($rawValue, 4, "\x00", STR_PAD_RIGHT);
+                                }
+                                $field[] = current(unpack('V', $rawValue));
                             }
                         }
                         break;
@@ -1143,7 +1143,7 @@ class Reader
                         break;
                 }
             }
-            if (count($field) == 1) {
+            if ($valueId == 1) {
                 $field = $field[0];
             }
             $row[isset($format['name']) ? $format['name'] : $fieldId] = $field;
