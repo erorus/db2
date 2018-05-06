@@ -44,13 +44,16 @@ class Reader
     private $commonBlockSize = 0;
     private $bitpackedDataPos = 0;
     private $lookupColumnCount = 0;
-    private $idListSize = 0;
+    private $idBlockSize = 0;
     private $fieldStorageInfoPos = 0;
     private $fieldStorageInfoSize = 0;
     private $palletDataPos = 0;
     private $palletDataSize = 0;
     private $relationshipDataPos = 0;
     private $relationshipDataSize = 0;
+
+    private $sectionCount = 0;
+    private $sectionHeaders = [];
 
     private $idField = -1;
 
@@ -112,6 +115,12 @@ class Reader
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
                     $this->openWdc1($arg);
+                    break;
+                case 'WDC2':
+                    if (!is_null($arg) && !is_array($arg)) {
+                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                    }
+                    $this->openWdc2($arg);
                     break;
                 default:
                     throw new \Exception("Unknown DB2 format: ".$this->fileFormat);
@@ -314,7 +323,7 @@ class Reader
         $this->bitpackedDataPos     = $parts[13];
         $this->lookupColumnCount    = $parts[14];
         $this->indexBlockPos        = $parts[15];
-        $this->idListSize           = $parts[16];
+        $this->idBlockSize          = $parts[16];
         $this->fieldStorageInfoSize = $parts[17];
         $this->commonBlockSize      = $parts[18];
         $this->palletDataSize       = $parts[19];
@@ -379,7 +388,7 @@ class Reader
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
         if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-            || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
@@ -460,6 +469,211 @@ class Reader
                 }
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
+            $this->populateRecordOffsets();
+
+            if (is_null($stringFields)) {
+                $this->detectEmbeddedStringFields();
+            }
+        }
+
+        $this->guessFieldTypes();
+    }
+
+    private function openWdc2($stringFields) {
+        $headerFormat = 'V9x/v2y/V7z';
+
+        fseek($this->fileHandle, 4);
+        $parts = array_values(unpack($headerFormat, fread($this->fileHandle, 68)));
+
+        $this->recordCount          = $parts[0];
+        $this->fieldCount           = $parts[1];
+        $this->recordSize           = $parts[2];
+        $this->stringBlockSize      = $parts[3];
+        $this->tableHash            = $parts[4];
+        $this->layoutHash           = $parts[5];
+        $this->minId                = $parts[6];
+        $this->maxId                = $parts[7];
+        $this->locale               = $parts[8];
+        //$this->copyBlockSize        = 0;
+        $this->flags                = $parts[9];
+        $this->idField              = $parts[10];
+        $this->totalFieldCount      = $parts[11];
+        $this->bitpackedDataPos     = $parts[12];
+        $this->lookupColumnCount    = $parts[13];
+        //$this->indexBlockPos        = 0;
+        //$this->idBlockSize          = 0;
+        $this->fieldStorageInfoSize = $parts[14];
+        $this->commonBlockSize      = $parts[15];
+        $this->palletDataSize       = $parts[16];
+        //$this->relationshipDataSize = 0;
+        $this->sectionCount         = $parts[17];
+
+        $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
+        $this->hasIdBlock = ($this->flags & 4) > 0;
+
+        $eof = 0;
+        $hasRelationshipData = false;
+        $recordCountSum = 0;
+
+        for ($x = 0; $x < $this->sectionCount; $x++) {
+            $section = unpack('Vunk1/Vunk2/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4*9));
+            if (!$this->hasEmbeddedStrings) {
+                $section['stringBlockPos'] = $section['offset'] + ($this->recordCount * $this->recordSize);
+            } else {
+                $section['stringBlockSize'] = 0;
+                $section['stringBlockPos'] = $section['offset'] + $section['indexBlockPos'] + 6 * ($this->maxId - $this->minId + 1);
+            }
+
+            $section['idBlockPos'] = $section['stringBlockPos'] + $section['stringBlockSize'];
+            $section['copyBlockPos'] = $section['idBlockPos'] + $section['idBlockSize'];
+            $section['relationshipDataPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
+            $hasRelationshipData |= $section['relationshipDataSize'] > 0;
+
+            $eof += $section['size'] = $section['relationshipDataPos'] + $section['relationshipDataSize'] - $section['offset'];
+            $recordCountSum += $section['recordCount'];
+
+            ksort($section);
+
+            $this->sectionHeaders[] = $section;
+        }
+
+        $this->headerSize = ftell($this->fileHandle) + $this->fieldCount * 4;
+
+        if ($this->recordCount != $recordCountSum) {
+            throw new \Exception(sprintf('Expected %d records, found %d records in %d sections', $this->recordCount, $recordCountSum, $this->sectionCount));
+        }
+
+        if ($this->fieldStorageInfoSize != $this->totalFieldCount * 24) {
+            throw new \Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
+        }
+
+        if ($this->hasEmbeddedStrings) {
+            if (!$this->hasIdBlock) {
+                throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
+            }
+
+            if ($this->sectionCount != 1) {
+                throw new \Exception(sprintf('File has embedded strings and %d sections, expected 1, aborting', $this->sectionCount));
+            }
+        }
+
+        $this->fieldStorageInfoPos = $this->headerSize;
+
+        $this->palletDataPos = $this->fieldStorageInfoPos + $this->fieldStorageInfoSize;
+
+        $this->commonBlockPos = $this->palletDataPos + $this->palletDataSize;
+
+        $eof += $this->commonBlockPos + $this->commonBlockSize;
+        if ($eof != $this->fileSize) {
+            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+        }
+
+        $this->recordFormat = [];
+        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+            $this->recordFormat[$fieldId] = unpack('sbitShift/voffset', fread($this->fileHandle, 4));
+            $this->recordFormat[$fieldId]['valueLength'] = max(1, ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8));
+            $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
+            $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
+            if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
+                && !is_null($stringFields) && in_array($fieldId, $stringFields)) {
+                $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
+            }
+            $this->recordFormat[$fieldId]['signed'] = false;
+            if ($fieldId > 0) {
+                $this->recordFormat[$fieldId - 1]['valueCount'] =
+                    floor(($this->recordFormat[$fieldId]['offset'] - $this->recordFormat[$fieldId - 1]['offset']) / $this->recordFormat[$fieldId - 1]['valueLength']);
+            }
+        }
+
+        $fieldId = $this->fieldCount - 1;
+        $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
+        $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
+        if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
+            (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
+             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+            $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
+        }
+
+        $commonBlockPointer = 0;
+        $palletBlockPointer = 0;
+
+        fseek($this->fileHandle, $this->fieldStorageInfoPos);
+        $storageInfoFormat = 'voffsetBits/vsizeBits/VadditionalDataSize/VstorageType/VbitpackOffsetBits/VbitpackSizeBits/VarrayCount';
+        for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+            $parts = unpack($storageInfoFormat, fread($this->fileHandle, 24));
+
+            switch ($parts['storageType']) {
+                case static::FIELD_COMPRESSION_COMMON:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['valueCount'] = 1;
+                    $parts['defaultValue'] = pack('V', $parts['bitpackOffsetBits']);
+                    $parts['bitpackOffsetBits'] = 0;
+                    $parts['blockOffset'] = $commonBlockPointer;
+                    $commonBlockPointer += $parts['additionalDataSize'];
+                    break;
+                case static::FIELD_COMPRESSION_BITPACKED:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
+                    $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    $this->recordFormat[$fieldId]['valueCount'] = 1;
+                    break;
+                case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
+                case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
+                    $this->recordFormat[$fieldId]['size'] = 4;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
+                    $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
+                    $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'] > 0 ? $parts['arrayCount'] : 1;
+                    $parts['blockOffset'] = $palletBlockPointer;
+                    $palletBlockPointer += $parts['additionalDataSize'];
+                    break;
+                case static::FIELD_COMPRESSION_NONE:
+                    if ($parts['arrayCount'] > 0) {
+                        $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
+                    }
+                    break;
+            }
+
+            $this->recordFormat[$fieldId]['storage'] = $parts;
+        }
+
+        if (!$this->hasIdBlock) {
+            if ($this->idField >= $this->fieldCount) {
+                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
+            }
+            if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
+                throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
+            }
+        }
+
+        if ($hasRelationshipData) {
+            $this->recordFormat[$this->totalFieldCount++] = [
+                'valueLength' => 4,
+                'size' => 4,
+                'offset' => $this->recordSize,
+                'type' => static::FIELD_TYPE_INT,
+                'valueCount' => 1,
+                'signed' => false,
+                'storage' => [
+                    'storageType' => static::FIELD_COMPRESSION_NONE
+                ]
+            ];
+        }
+
+        $this->populateIdMap();
+
+        if ($this->hasEmbeddedStrings) {
+            for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
+                if ($this->recordFormat[$fieldId]['storage']['storageType'] != static::FIELD_COMPRESSION_NONE) {
+                    throw new \Exception("DB2 with Embedded Strings has compressed field $fieldId");
+                }
+                unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
+            }
+
+            throw new \Exception('todo');
+
             $this->populateRecordOffsets();
 
             if (is_null($stringFields)) {
@@ -658,8 +872,20 @@ class Reader
             $couldBeString = !$this->hasEmbeddedStrings;
             $recordOffset = 0;
             $distinctValues = [];
+            $sectionId = -1;
+
             while (($couldBeString || $couldBeFloat) && $recordOffset < $this->recordCount) {
                 $data = $this->getRawRecord($recordOffset);
+                if ($this->sectionCount) {
+                    $sectionRecordsSkipped = 0;
+                    for ($sectionId = 0; $sectionId < $this->sectionCount; $sectionId++) {
+                        if ($recordOffset - $sectionRecordsSkipped <= $this->sectionHeaders[$sectionId]['recordCount']) {
+                            break;
+                        }
+                        $sectionRecordsSkipped += $this->sectionHeaders[$sectionId]['recordCount'];
+                    }
+                }
+
                 if (!$this->hasEmbeddedStrings) {
                     $byteOffset = $format['offset'];
                 } else {
@@ -680,21 +906,35 @@ class Reader
                     }
                 }
                 $data = substr($data, $byteOffset, $format['valueLength'] * $format['valueCount']);
-                $values = unpack('V*', $data);
-                foreach ($values as $value) {
+                $values = array_values(unpack('V*', $data));
+                foreach ($values as $valueId => $value) {
                     if ($value == 0) {
                         continue; // can't do much with this
                     }
-                    if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
-                        $distinctValues[$value] = true;
-                    }
                     if ($couldBeString) {
-                        if ($value > $this->stringBlockSize) {
-                            $couldBeString = false;
+                        if ($this->sectionCount) {
+                            $stringPos = $this->sectionHeaders[$sectionId]['offset']; // start at top of block
+                            $stringPos += ($recordOffset - $sectionRecordsSkipped) * $this->recordSize; // get to start of this record
+                            $stringPos += $byteOffset; // get to start of this field
+                            $stringPos += 4 * $valueId; // get to start of this value
+                            $stringPos += $value; // add offset from here to the start of the string
+                            if ($stringPos < $this->sectionHeaders[$sectionId]['stringBlockPos'] ||
+                                $stringPos >= $this->sectionHeaders[$sectionId]['stringBlockPos'] + $this->sectionHeaders[$sectionId]['stringBlockSize']) {
+                                $couldBeString = false;
+                            }
                         } else {
+                            $stringPos = $this->stringBlockPos + $value;
+                            if ($value >= $this->stringBlockSize) {
+                                $couldBeString = false;
+                            }
+                        }
+                        if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
+                            $distinctValues[$stringPos] = true;
+                        }
+                        if ($couldBeString) {
                             // offset should be the start of a string
                             // so the char immediately before should be the null terminator of the prev string
-                            fseek($this->fileHandle, $this->stringBlockPos + $value - 1);
+                            fseek($this->fileHandle, $stringPos - 1);
                             if (fread($this->fileHandle, 1) !== "\x00") {
                                 $couldBeString = false;
                             }
@@ -731,6 +971,9 @@ class Reader
     private function populateIdMap() {
         $this->idMap = [];
         if (!$this->hasIdBlock) {
+            if ($this->sectionCount) {
+                throw new \Exception('todo');
+            }
             $this->recordFormat[$this->idField]['signed'] = false; // in case it's a 32-bit int
             $idShortcut = !isset($this->recordFormat[$this->idField]['storage']) || $this->recordFormat[$this->idField]['storage']['storageType'] == static::FIELD_COMPRESSION_NONE;
             if ($idShortcut) {
@@ -748,34 +991,55 @@ class Reader
                 $this->idMap[$id] = $x;
             }
         } else {
-            fseek($this->fileHandle, $this->idBlockPos);
-            if ($this->fileFormat == 'WDB2') {
-                for ($x = $this->minId; $x <= $this->maxId; $x++) {
-                    $record = current(unpack('V', fread($this->fileHandle, 4)));
-                    if ($record) {
-                        $this->idMap[$x] = $record - 1;
+            if ($this->sectionCount) {
+                $recIndex = 0;
+                for ($z = 0; $z < $this->sectionCount; $z++) {
+                    fseek($this->fileHandle, $this->sectionHeaders[$z]['idBlockPos']);
+                    for ($x = 0; $x < $this->recordCount; $x++) {
+                        $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $recIndex++;
                     }
-                    fseek($this->fileHandle, 2, SEEK_CUR); // ignore embed string length in this record
                 }
             } else {
-                for ($x = 0; $x < $this->recordCount; $x++) {
-                    $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $x;
+                fseek($this->fileHandle, $this->idBlockPos);
+                if ($this->fileFormat == 'WDB2') {
+                    for ($x = $this->minId; $x <= $this->maxId; $x++) {
+                        $record = current(unpack('V', fread($this->fileHandle, 4)));
+                        if ($record) {
+                            $this->idMap[$x] = $record - 1;
+                        }
+                        fseek($this->fileHandle, 2, SEEK_CUR); // ignore embed string length in this record
+                    }
+                } else {
+                    for ($x = 0; $x < $this->recordCount; $x++) {
+                        $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $x;
+                    }
                 }
             }
         }
 
-        if ($this->copyBlockSize) {
-            fseek($this->fileHandle, $this->copyBlockPos);
-            $entryCount = floor($this->copyBlockSize / 8);
-            for ($x = 0; $x < $entryCount; $x++) {
-                list($newId, $existingId) = array_values(unpack('V*', fread($this->fileHandle, 8)));
-                if (!isset($this->idMap[$existingId])) {
-                    throw new \Exception("Copy block referenced ID $existingId which does not exist");
-                }
-                $this->idMap[$newId] = $this->idMap[$existingId];
-            }
-            ksort($this->idMap, SORT_NUMERIC);
+        $sections = $this->sectionHeaders;
+        if (!$sections) {
+            $sections = [[
+                'copyBlockSize' => $this->copyBlockSize,
+                'copyBlockPos' => $this->copyBlockPos,
+            ]];
         }
+
+        foreach ($sections as &$section) {
+            if ($section['copyBlockSize']) {
+                fseek($this->fileHandle, $section['copyBlockPos']);
+                $entryCount = floor($section['copyBlockSize'] / 8);
+                for ($x = 0; $x < $entryCount; $x++) {
+                    list($newId, $existingId) = array_values(unpack('V*', fread($this->fileHandle, 8)));
+                    if (!isset($this->idMap[$existingId])) {
+                        throw new \Exception("Copy block referenced ID $existingId which does not exist");
+                    }
+                    $this->idMap[$newId] = $this->idMap[$existingId];
+                }
+                ksort($this->idMap, SORT_NUMERIC);
+            }
+        }
+        unset($section);
     }
 
     private function populateRecordOffsets() {
@@ -933,6 +1197,9 @@ class Reader
     // general purpose for internal use
 
     private function getRawRecord($recordOffset, $id = false) {
+        $relationshipDataSize = $this->relationshipDataSize;
+        $relationshipDataPos = $this->relationshipDataPos;
+
         if (!is_null($this->recordOffsets)) {
             $pointer = $this->recordOffsets[$recordOffset];
             if ($pointer['size'] == 0) {
@@ -943,7 +1210,27 @@ class Reader
             fseek($this->fileHandle, $pointer['pos']);
             $data = fread($this->fileHandle, $pointer['size']);
         } else {
-            fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
+            if ($this->sectionCount) {
+                $offsetSearch = 0;
+                foreach ($this->sectionHeaders as $sectionHeader) {
+                    if ($recordOffset - $offsetSearch > $sectionHeader['recordCount']) {
+                        $offsetSearch += $sectionHeader['recordCount'];
+                        continue;
+                    }
+
+                    $relationshipDataSize = $sectionHeader['relationshipDataSize'];
+                    $relationshipDataPos = $sectionHeader['relationshipDataPos'];
+
+                    fseek($this->fileHandle, $sectionHeader['offset'] + ($recordOffset - $offsetSearch) * $this->recordSize);
+                    $offsetSearch = false;
+                    break;
+                }
+                if ($offsetSearch !== false) {
+                    throw new \Exception("Could not find record offset $recordOffset in {$this->recordCount} records");
+                }
+            } else {
+                fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
+            }
             $data = fread($this->fileHandle, $this->recordSize);
         }
 
@@ -961,14 +1248,16 @@ class Reader
             }
         }
 
-        if ($this->relationshipDataSize) {
-            $relationshipPos = $recordOffset * 8 + 12;
-            if ($relationshipPos >= $this->relationshipDataSize) {
+
+
+        if ($relationshipDataSize) {
+            $relationshipOffset = $recordOffset * 8 + 12;
+            if ($relationshipOffset >= $relationshipDataSize) {
                 throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
-                    $relationshipPos, $this->relationshipDataSize));
+                    $relationshipOffset, $relationshipDataSize));
             }
 
-            fseek($this->fileHandle, $this->relationshipDataPos + $relationshipPos);
+            fseek($this->fileHandle, $relationshipDataPos + $relationshipOffset);
             $data .= fread($this->fileHandle, 4);
 
             $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
@@ -1032,15 +1321,23 @@ class Reader
             $this->recordFormat[$fieldId]['storage']['defaultValue'];
     }
 
-    private function getString($stringBlockOffset) {
-        if ($stringBlockOffset >= $this->stringBlockSize) {
+    private function getString($stringBlockOffset, $sectionId) {
+        $stringBlockSize = $this->stringBlockSize;
+        $stringBlockPos = $this->stringBlockPos;
+
+        if ($sectionId >= 0) {
+            $stringBlockSize = $this->sectionHeaders[$sectionId]['stringBlockSize'];
+            $stringBlockPos = $this->sectionHeaders[$sectionId]['stringBlockPos'];
+        }
+
+        if ($stringBlockOffset >= $stringBlockSize) {
             // @codeCoverageIgnoreStart
-            throw new \Exception("Asked to get string from $stringBlockOffset, string block size is only ".$this->stringBlockSize);
+            throw new \Exception("Asked to get string from $stringBlockOffset, string block size is only $stringBlockSize");
             // @codeCoverageIgnoreEnd
         }
-        $maxLength = $this->stringBlockSize - $stringBlockOffset;
+        $maxLength = $stringBlockSize - $stringBlockOffset;
 
-        fseek($this->fileHandle, $this->stringBlockPos + $stringBlockOffset);
+        fseek($this->fileHandle, $stringBlockPos + $stringBlockOffset);
         return stream_get_line($this->fileHandle, $maxLength, "\x00");
     }
 
@@ -1052,6 +1349,17 @@ class Reader
         }
 
         $record = $this->getRawRecord($recordOffset, $id);
+        $sectionId = -1;
+        $sectionRecordsSkipped = 0;
+        if ($this->sectionCount) {
+            for ($sectionId = 0; $sectionId < $this->sectionCount; $sectionId++) {
+                if ($recordOffset - $sectionRecordsSkipped <= $this->sectionHeaders[$sectionId]['recordCount']) {
+                    break;
+                }
+                $sectionRecordsSkipped += $this->sectionHeaders[$sectionId]['recordCount'];
+            }
+        }
+
         $fieldMax = $id === false ? $this->fieldCount : $this->totalFieldCount; // do not search wdb6 common table when we don't know IDs yet
 
         $runningOffset = 0;
@@ -1136,7 +1444,16 @@ class Reader
                         $field[] = round(current(unpack('f', $rawValue)), 6);
                         break;
                     case static::FIELD_TYPE_STRING:
-                        $field[] = $this->getString(current(unpack('V', $rawValue)));
+                        $stringPos = current(unpack('V', $rawValue));
+
+                        if ($sectionId >= 0) {
+                            $stringPos += ($recordOffset - $sectionRecordsSkipped) * $this->recordSize; // get to start of this record
+                            $stringPos += $format['offset']; // get to start of this field
+                            $stringPos += 4 * $valueId; // get to start of this value
+                            $stringPos += $this->sectionHeaders[$sectionId]['offset'] - $this->sectionHeaders[$sectionId]['stringBlockPos'];
+                        }
+
+                        $field[] = $this->getString($stringPos, $sectionId);
                         break;
                 }
             }
