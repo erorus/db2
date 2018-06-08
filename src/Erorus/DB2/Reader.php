@@ -16,6 +16,7 @@ class Reader
     const FIELD_COMPRESSION_COMMON = 2;
     const FIELD_COMPRESSION_BITPACKED_INDEXED = 3;
     const FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY = 4;
+    const FIELD_COMPRESSION_BITPACKED_SIGNED = 5;
 
     private $fileHandle;
     private $fileFormat = '';
@@ -432,6 +433,8 @@ class Reader
                         $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
                     }
                     break;
+                default:
+                    throw new \Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
             }
 
             $this->recordFormat[$fieldId]['storage'] = $parts;
@@ -612,6 +615,9 @@ class Reader
                     $parts['blockOffset'] = $commonBlockPointer;
                     $commonBlockPointer += $parts['additionalDataSize'];
                     break;
+                case static::FIELD_COMPRESSION_BITPACKED_SIGNED:
+                    $this->recordFormat[$fieldId]['signed'] = true;
+                    // fall through
                 case static::FIELD_COMPRESSION_BITPACKED:
                     $this->recordFormat[$fieldId]['size'] = 4;
                     $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
@@ -634,6 +640,8 @@ class Reader
                         $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'];
                     }
                     break;
+                default:
+                    throw new \Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
             }
 
             $this->recordFormat[$fieldId]['storage'] = $parts;
