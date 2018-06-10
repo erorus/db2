@@ -546,6 +546,10 @@ class Reader
             throw new \Exception(sprintf('Expected %d records, found %d records in %d sections', $this->recordCount, $recordCountSum, $this->sectionCount));
         }
 
+        if ($this->recordCount == 0) {
+            return;
+        }
+
         if ($this->fieldStorageInfoSize != $this->totalFieldCount * 24) {
             throw new \Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
         }
@@ -630,7 +634,13 @@ class Reader
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
                     $this->recordFormat[$fieldId]['size'] = 4;
-                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    if ($parts['storageType'] == static::FIELD_COMPRESSION_BITPACKED_INDEXED) {
+                        $this->recordFormat[$fieldId]['size'] = static::guessPalletFieldSize($palletBlockPointer, $parts['additionalDataSize']);
+                    }
+                    $this->recordFormat[$fieldId]['type'] =
+                        $this->recordFormat[$fieldId]['size'] == 4 ?
+                            static::guessPalletFieldType($palletBlockPointer, $parts['additionalDataSize']) :
+                            static::FIELD_TYPE_INT;
                     $this->recordFormat[$fieldId]['offset'] = floor($parts['offsetBits'] / 8);
                     $this->recordFormat[$fieldId]['valueLength'] = ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
                     $this->recordFormat[$fieldId]['valueCount'] = $parts['arrayCount'] > 0 ? $parts['arrayCount'] : 1;
@@ -954,7 +964,7 @@ class Reader
                             $couldBeFloat = false;
                         } else {
                             $asFloat = current(unpack('f', pack('V', $value)));
-                            if (round($asFloat, 6) == 0) {
+                            if (abs($asFloat) > 1e9 || round($asFloat, 6) == 0) {
                                 $couldBeFloat = false;
                             }
                         }
@@ -975,7 +985,68 @@ class Reader
         }
         unset($format);
     }
-    
+
+    private function guessPalletFieldType($palletBlockOffset, $palletBlockSize) {
+        $oldPos = ftell($this->fileHandle);
+
+        fseek($this->fileHandle, $this->palletDataPos + $palletBlockOffset);
+
+        $couldBeFloat = true;
+        for ($x = 0; $x < $palletBlockSize; $x += $chunkSize) {
+            $chunkSize = min(64, $palletBlockSize - $x);
+            if ($chunkSize < 4) {
+                break;
+            }
+
+            $values = array_values(unpack('V*', fread($this->fileHandle, $chunkSize)));
+            foreach ($values as $value) {
+                $exponent = ($value >> 23) & 0xFF;
+                if ($exponent == 0 || $exponent == 0xFF) {
+                    $couldBeFloat = false;
+                    break 2;
+                } else {
+                    $asFloat = current(unpack('f', pack('V', $value)));
+                    if (abs($asFloat) > 1e9 || round($asFloat, 6) == 0) {
+                        $couldBeFloat = false;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        fseek($this->fileHandle, $oldPos);
+
+        return $couldBeFloat ? static::FIELD_TYPE_FLOAT : static::FIELD_TYPE_INT;
+    }
+
+    private function guessPalletFieldSize($palletBlockOffset, $palletBlockSize) {
+        $oldPos = ftell($this->fileHandle);
+
+        fseek($this->fileHandle, $this->palletDataPos + $palletBlockOffset);
+
+        // each value in the pallet takes up 4 bytes, but sometimes fewer bytes represent the value and the rest are junk
+        // this tries to guess how many bytes represent the value by seeing what junk bytes exist in all pallet locations
+
+        $first = str_split(fread($this->fileHandle, 4));
+        $sameCount = 3;
+        for ($x = 4; $x < $palletBlockSize; $x += 4) {
+            $test = str_split(fread($this->fileHandle, 4));
+            for ($y = 3; $y >= 4 - $sameCount; $y--) {
+                if ($test[$y] != $first[$y]) {
+                    $sameCount = 3 - $y;
+                    break;
+                }
+            }
+            if ($sameCount == 0) {
+                break;
+            }
+        }
+
+        fseek($this->fileHandle, $oldPos);
+
+        return 4 - $sameCount;
+    }
+
     private function populateIdMap() {
         $this->idMap = [];
         if (!$this->hasIdBlock) {
@@ -1323,7 +1394,7 @@ class Reader
         }
         fseek($this->fileHandle, $this->palletDataPos + $offset);
 
-        return current(unpack('V', fread($this->fileHandle, 4)));
+        return fread($this->fileHandle, 4);
     }
 
     private function getCommonData($fieldId, $id) {
@@ -1408,8 +1479,8 @@ class Reader
                                 continue 2; // we're done, rawvalue is actual value
                             }
 
-                            $field[] = $this->getPalletData($format['storage'], $rawValue, $valueId);
-                            continue 2;
+                            $rawValue = substr($this->getPalletData($format['storage'], $rawValue, $valueId), 0, $format['size']);
+                            break;
 
                         case static::FIELD_COMPRESSION_COMMON:
                             $rawValue = $this->getCommonData($fieldId, $id);
