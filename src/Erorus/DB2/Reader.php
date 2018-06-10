@@ -1078,7 +1078,7 @@ class Reader
                     for ($x = 0; $x < $recordCount; $x++) {
                         $id = current(unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
                         $this->idMap[$id] = $recIndex++;
-                        fseek($this->fileHandle, $this->recordSize - 4, SEEK_CUR); // subtract 4 for the 4 we just read
+                        fseek($this->fileHandle, $this->recordSize - $this->recordFormat[$this->idField]['size'], SEEK_CUR); // subtract for the bytes we just read
                     }
                 } else {
                     for ($x = 0; $x < $recordCount; $x++) {
