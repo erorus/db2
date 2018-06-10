@@ -524,7 +524,7 @@ class Reader
                 $section['stringBlockPos'] = $section['offset'] + ($this->recordCount * $this->recordSize);
             } else {
                 $section['stringBlockSize'] = 0;
-                $section['stringBlockPos'] = $section['offset'] + $section['indexBlockPos'] + 6 * ($this->maxId - $this->minId + 1);
+                $section['stringBlockPos'] = $section['indexBlockPos'] + 6 * ($this->maxId - $this->minId + 1); // indexBlockPos is absolute position in file
             }
 
             $section['idBlockPos'] = $section['stringBlockPos'] + $section['stringBlockSize'];
@@ -558,6 +558,8 @@ class Reader
             if ($this->sectionCount != 1) {
                 throw new \Exception(sprintf('File has embedded strings and %d sections, expected 1, aborting', $this->sectionCount));
             }
+
+            $this->indexBlockPos = $this->sectionHeaders[0]['indexBlockPos'];
         }
 
         $this->fieldStorageInfoPos = $this->headerSize;
@@ -679,8 +681,6 @@ class Reader
                 }
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
-
-            throw new \Exception('todo');
 
             $this->populateRecordOffsets();
 
