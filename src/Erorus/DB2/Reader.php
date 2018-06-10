@@ -1398,10 +1398,12 @@ class Reader
                         case static::FIELD_COMPRESSION_BITPACKED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
+                        case static::FIELD_COMPRESSION_BITPACKED_SIGNED:
                             $rawValue = static::extractValueFromBitstring(substr($record, $format['offset'], $format['valueLength']),
                                 $format['storage']['offsetBits'] % 8, $format['storage']['sizeBits']);
 
-                            if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED) {
+                            if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED ||
+                                $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED) {
                                 $field[] = $rawValue;
                                 continue 2; // we're done, rawvalue is actual value
                             }
