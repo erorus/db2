@@ -979,24 +979,43 @@ class Reader
     private function populateIdMap() {
         $this->idMap = [];
         if (!$this->hasIdBlock) {
-            if ($this->sectionCount) {
-                throw new \Exception('todo');
-            }
             $this->recordFormat[$this->idField]['signed'] = false; // in case it's a 32-bit int
-            $idShortcut = !isset($this->recordFormat[$this->idField]['storage']) || $this->recordFormat[$this->idField]['storage']['storageType'] == static::FIELD_COMPRESSION_NONE;
-            if ($idShortcut) {
-                $idShortcut = $this->recordFormat[$this->idField]['offset'];
+
+            $idOffset = !isset($this->recordFormat[$this->idField]['storage']) || $this->recordFormat[$this->idField]['storage']['storageType'] == static::FIELD_COMPRESSION_NONE;
+            if ($idOffset) {
+                $idOffset = $this->recordFormat[$this->idField]['offset'];
             }
-            for ($x = 0; $x < $this->recordCount; $x++) {
-                // attempt shortcut so we don't have to parse the whole record
-                if ($idShortcut !== false) {
-                    fseek($this->fileHandle, $this->headerSize + $x * $this->recordSize + $idShortcut);
-                    $id = current(unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
-                } else {
-                    $rec = $this->getRecordByOffset($x, false);
-                    $id = $rec[$this->idField];
+
+            $sectionCount = $this->sectionCount ?: 1;
+
+            $recIndex = 0;
+            $recordCount = $this->recordCount;
+
+            for ($z = 0; $z < $sectionCount; $z++) {
+                if ($this->sectionCount) {
+                    $recordCount = $this->sectionHeaders[$z]['recordCount'];
                 }
-                $this->idMap[$id] = $x;
+                if ($idOffset !== false) {
+                    // attempt shortcut so we don't have to parse the whole record
+
+                    if ($this->sectionCount) {
+                        fseek($this->fileHandle, $this->sectionHeaders[$z]['offset'] + $idOffset);
+                    } else {
+                        fseek($this->fileHandle, $this->headerSize + $idOffset);
+                    }
+
+                    for ($x = 0; $x < $recordCount; $x++) {
+                        $id = current(unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
+                        $this->idMap[$id] = $recIndex++;
+                        fseek($this->fileHandle, $this->recordSize - 4, SEEK_CUR); // subtract 4 for the 4 we just read
+                    }
+                } else {
+                    for ($x = 0; $x < $recordCount; $x++) {
+                        $rec = $this->getRecordByOffset($recIndex, false);
+                        $id  = $rec[$this->idField];
+                        $this->idMap[$id] = $recIndex++;
+                    }
+                }
             }
         } else {
             if ($this->sectionCount) {
@@ -1255,8 +1274,6 @@ class Reader
                 }
             }
         }
-
-
 
         if ($relationshipDataSize) {
             $relationshipOffset = $recordOffset * 8 + 12;
