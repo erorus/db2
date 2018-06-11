@@ -1000,6 +1000,9 @@ class Reader
 
             $values = array_values(unpack('V*', fread($this->fileHandle, $chunkSize)));
             foreach ($values as $value) {
+                if ($value == 0) {
+                    continue;
+                }
                 $exponent = ($value >> 23) & 0xFF;
                 if ($exponent == 0 || $exponent == 0xFF) {
                     $couldBeFloat = false;
