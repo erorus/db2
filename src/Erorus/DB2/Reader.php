@@ -633,10 +633,7 @@ class Reader
                     break;
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
-                    $this->recordFormat[$fieldId]['size'] = 4;
-                    if ($parts['storageType'] == static::FIELD_COMPRESSION_BITPACKED_INDEXED) {
-                        $this->recordFormat[$fieldId]['size'] = static::guessPalletFieldSize($palletBlockPointer, $parts['additionalDataSize']);
-                    }
+                    $this->recordFormat[$fieldId]['size'] = static::guessPalletFieldSize($palletBlockPointer, $parts['additionalDataSize']);
                     $this->recordFormat[$fieldId]['type'] =
                         $this->recordFormat[$fieldId]['size'] == 4 ?
                             static::guessPalletFieldType($palletBlockPointer, $parts['additionalDataSize']) :
