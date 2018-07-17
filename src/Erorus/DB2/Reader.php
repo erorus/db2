@@ -599,7 +599,8 @@ class Reader
         $this->recordFormat[$fieldId]['valueCount'] = max(1, floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
         if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
             (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-             || (!$this->hasIdBlock && $this->idField == $fieldId))) {  // or the reported ID field is the last field
+             || (!$this->hasIdBlock && $this->idField == $fieldId)// or the reported ID field is the last field
+             || $this->hasEmbeddedStrings)) {                     // or we have embedded strings
             $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
         }
 
@@ -1154,7 +1155,6 @@ class Reader
             $lowerBound = $this->minId;
             $upperBound = $this->maxId;
         }
-        $seenBefore = [];
         for ($x = $lowerBound; $x <= $upperBound; $x++) {
             if ($this->hasIdsInIndexBlock) {
                 $pointer = unpack('Vid/Vpos/vsize', fread($this->fileHandle, 10));
@@ -1163,29 +1163,8 @@ class Reader
                 $pointer = unpack('Vpos/vsize', fread($this->fileHandle, 6));
                 $pointer['id'] = $x;
             }
-            if ($pointer['size'] > 0) {
-                if (!isset($seenBefore[$pointer['pos']])) {
-                    $seenBefore[$pointer['pos']] = [];
-                }
-                if (!isset($this->idMap[$pointer['id']])) {
-                    //echo "Found {$pointer['pos']} x {$pointer['size']} in index block for $pointer['id'] which isn't in id block\n";
-                    foreach ($seenBefore[$pointer['pos']] as $anotherId) {
-                        if (isset($this->idMap[$anotherId])) {
-                            //echo "Mapping $pointer['id'] to match previously seen $anotherId\n";
-                            $this->idMap[$pointer['id']] = $this->idMap[$anotherId];
-                        }
-                    }
-                }
-                if (isset($this->idMap[$pointer['id']])) {
-                    $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
-                    foreach ($seenBefore[$pointer['pos']] as $anotherId) {
-                        if (!isset($this->idMap[$anotherId])) {
-                            //echo "Mapping previously seen $anotherId to match $pointer['id']\n";
-                            $this->idMap[$anotherId] = $this->idMap[$pointer['id']];
-                        }
-                    }
-                }
-                $seenBefore[$pointer['pos']][] = $pointer['id'];
+            if ($pointer['size'] > 0 && isset($this->idMap[$pointer['id']])) {
+                $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
             }
         }
 
