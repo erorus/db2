@@ -60,7 +60,8 @@ Also check out example.php, which is what I'm using during development.
 | 7.0.3 - 7.2.0 | WCH7/8 | Yes | No |
 | 7.2.0 - 7.3.2 | WDB6 | Yes | Yes |
 | 7.2.0 - ? | Hotfix.tbl | Yes | No |
-| 7.3.5 - ? | WDC1 | Yes | No |
+| 7.3.5 | WDC1 | Yes | No |
+| 8.0.1 - ? | WDC2 | Yes | No |
 
 All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc).
 
@@ -72,7 +73,7 @@ This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/ne
 
 ## Disclaimers
 
-WDC1 support is preliminary and could use further improvements and code cleanup.
+WDC1 / WDC2 support is preliminary and could use further improvements and code cleanup.
 
 This work is neither endorsed by nor affiliated with Blizzard Entertainment.
 
