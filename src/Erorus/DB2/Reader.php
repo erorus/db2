@@ -773,6 +773,10 @@ class Reader
         $hotfixVersion          = $parts[0];
         $this->build            = $parts[1];
 
+        if ($hotfixVersion >= 5) {
+            fseek($this->fileHandle, 32, SEEK_CUR); // sha256 hash of file
+        }
+
         $this->fieldCount       = $sourceReader->fieldCount;
         $this->totalFieldCount  = $sourceReader->totalFieldCount;
         $this->tableHash        = $sourceReader->tableHash;
