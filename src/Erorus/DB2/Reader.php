@@ -56,6 +56,9 @@ class Reader
     private $sectionCount = 0;
     private $sectionHeaders = [];
 
+    private $skippedSectionsCount = 0;
+    private $skippedRecordsCount = 0;
+
     private $idField = -1;
 
     private $hasEmbeddedStrings = false;
@@ -521,13 +524,14 @@ class Reader
 
         for ($x = 0; $x < $this->sectionCount; $x++) {
             if ($this->fileFormat == 'WDC2') {
-                $section = unpack('C8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
+                $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
             } else {
-                $section = unpack('C8tactkey/Voffset/VrecordCount/VstringBlockSize/VindexRecordsEnd/VidBlockSize/VrelationshipDataSize/VindexBlockCount/VcopyBlockCount', fread($this->fileHandle, 4*10));
+                $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VindexRecordsEnd/VidBlockSize/VrelationshipDataSize/VindexBlockCount/VcopyBlockCount', fread($this->fileHandle, 4*10));
             }
 
+            $section['tactkey'] = bin2hex($section['tactkey']);
             if (!$this->hasEmbeddedStrings) {
-                $section['stringBlockPos'] = $section['offset'] + ($this->recordCount * $this->recordSize);
+                $section['stringBlockPos'] = $section['offset'] + ($section['recordCount'] * $this->recordSize);
             } else {
                 // Essentially set up id block to start after a non-existent string block
                 if ($this->fileFormat == 'WDC2') {
@@ -561,8 +565,6 @@ class Reader
             }
             // relationshipDataSize in section headers
 
-            $hasRelationshipData |= $section['relationshipDataSize'] > 0;
-
             if ($this->fileFormat == 'WDC2') {
                 $eof += $section['size'] = $section['relationshipDataPos'] + $section['relationshipDataSize'] - $section['offset'];
             } else {
@@ -571,9 +573,26 @@ class Reader
 
                 $eof += $section['size'] = $section['indexIdListPos'] + $section['indexIdListSize'] - $section['offset'];
             }
-            $recordCountSum += $section['recordCount'];
 
             ksort($section);
+
+            if ($section['tactkey'] != '0000000000000000') {
+                // Don't try to decrypt or even read
+                // TODO: When CASC decrypts this chunk, will we be able to read it like any other chunk?
+
+                $this->sectionCount--;
+                $x--;
+
+                $this->recordCount -= $section['recordCount'];
+
+                $this->skippedSectionsCount++;
+                $this->skippedRecordsCount += $section['recordCount'];
+
+                continue;
+            }
+
+            $hasRelationshipData |= $section['relationshipDataSize'] > 0;
+            $recordCountSum += $section['recordCount'];
 
             $this->sectionHeaders[] = $section;
         }
@@ -1628,6 +1647,13 @@ class Reader
 
     public function getLayoutHash() {
         return $this->layoutHash;
+    }
+
+    public function getSkippedCounts() {
+        return [
+            'sections' => $this->skippedSectionsCount,
+            'records' => $this->skippedRecordsCount,
+        ];
     }
 
     public function loadAdb($adbPath) {
