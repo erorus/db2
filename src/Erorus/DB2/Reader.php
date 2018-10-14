@@ -118,6 +118,7 @@ class Reader
                     $this->openWdc1($arg);
                     break;
                 case 'WDC2':
+                case 'WDC3':
                     if (!is_null($arg) && !is_array($arg)) {
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
@@ -519,20 +520,57 @@ class Reader
         $recordCountSum = 0;
 
         for ($x = 0; $x < $this->sectionCount; $x++) {
-            $section = unpack('Vunk1/Vunk2/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4*9));
+            if ($this->fileFormat == 'WDC2') {
+                $section = unpack('C8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
+            } else {
+                $section = unpack('C8tactkey/Voffset/VrecordCount/VstringBlockSize/VindexRecordsEnd/VidBlockSize/VrelationshipDataSize/VindexBlockCount/VcopyBlockCount', fread($this->fileHandle, 4*10));
+            }
+
             if (!$this->hasEmbeddedStrings) {
                 $section['stringBlockPos'] = $section['offset'] + ($this->recordCount * $this->recordSize);
             } else {
+                // Essentially set up id block to start after a non-existent string block
+                if ($this->fileFormat == 'WDC2') {
+                    // indexBlockPos in section headers
+                    $section['indexBlockSize'] = 6 * ($this->maxId - $this->minId + 1);
+
+                    $section['stringBlockPos'] = $section['indexBlockPos'] + $section['indexBlockSize']; // indexBlockPos is absolute position in file
+                } else {
+                    $section['stringBlockPos'] = $section['indexRecordsEnd']; // - $section['offset'] ?
+                }
                 $section['stringBlockSize'] = 0;
-                $section['stringBlockPos'] = $section['indexBlockPos'] + 6 * ($this->maxId - $this->minId + 1); // indexBlockPos is absolute position in file
             }
 
             $section['idBlockPos'] = $section['stringBlockPos'] + $section['stringBlockSize'];
+            // isBlockSize in section headers
+
             $section['copyBlockPos'] = $section['idBlockPos'] + $section['idBlockSize'];
-            $section['relationshipDataPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
+            if ($this->fileFormat == 'WDC2') {
+                // copyBlockSize in section headers
+            } else {
+                $section['copyBlockSize'] = $section['copyBlockCount'] * 8;
+            }
+
+            if ($this->fileFormat == 'WDC2') {
+                $section['relationshipDataPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
+            } else {
+                $section['indexBlockPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
+                $section['indexBlockSize'] = $section['indexBlockCount'] * 6;
+
+                $section['relationshipDataPos'] = $section['indexBlockPos'] + $section['indexBlockSize'];
+            }
+            // relationshipDataSize in section headers
+
             $hasRelationshipData |= $section['relationshipDataSize'] > 0;
 
-            $eof += $section['size'] = $section['relationshipDataPos'] + $section['relationshipDataSize'] - $section['offset'];
+            if ($this->fileFormat == 'WDC2') {
+                $eof += $section['size'] = $section['relationshipDataPos'] + $section['relationshipDataSize'] - $section['offset'];
+            } else {
+                $section['indexIdListPos'] = $section['relationshipDataPos'] + $section['relationshipDataSize'];
+                $section['indexIdListSize'] = $section['indexBlockCount'] * 4;
+
+                $eof += $section['size'] = $section['indexIdListPos'] + $section['indexIdListSize'] - $section['offset'];
+            }
             $recordCountSum += $section['recordCount'];
 
             ksort($section);
@@ -1149,17 +1187,23 @@ class Reader
         // only required when hasEmbeddedStrings,
         // since it has the index block to map back into the data block
 
-        fseek($this->fileHandle, $this->indexBlockPos);
-        $this->recordOffsets = [];
-        if ($this->hasIdsInIndexBlock) {
-            $this->idMap = [];
-            $lowerBound = 0;
-            $upperBound = $this->recordCount - 1;
-        } else {
-            $lowerBound = $this->minId;
-            $upperBound = $this->maxId;
+        $idList = [];
+        if (isset($this->sectionHeaders[0]['indexIdListSize']) && $this->sectionHeaders[0]['indexIdListSize']) {
+            fseek($this->fileHandle, $this->sectionHeaders[0]['indexIdListPos']);
+            $idList = array_values(unpack('V*', fread($this->fileHandle, $this->sectionHeaders[0]['indexIdListSize'])));
         }
-        for ($x = $lowerBound; $x <= $upperBound; $x++) {
+
+        $this->recordOffsets = [];
+        if (!$idList) {
+            if ($this->hasIdsInIndexBlock) {
+                $this->idMap = [];
+                $idList = range(0, $this->recordCount - 1);
+            } else {
+                $idList = range($this->minId, $this->maxId);
+            }
+        }
+        fseek($this->fileHandle, $this->indexBlockPos);
+        foreach ($idList as $x) {
             if ($this->hasIdsInIndexBlock) {
                 $pointer = unpack('Vid/Vpos/vsize', fread($this->fileHandle, 10));
                 $this->idMap[$pointer['id']] = $x;
