@@ -1014,7 +1014,7 @@ class Reader
                         if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
                             $distinctValues[$stringPos] = true;
                         }
-                        if ($couldBeString) {
+                        if ($couldBeString && (!$this->sectionCount || $stringPos > $this->sectionHeaders[$sectionId]['stringBlockPos'])) {
                             // offset should be the start of a string
                             // so the char immediately before should be the null terminator of the prev string
                             fseek($this->fileHandle, $stringPos - 1);
