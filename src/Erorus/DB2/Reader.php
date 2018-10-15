@@ -522,6 +522,7 @@ class Reader
         $hasRelationshipData = false;
         $recordCountSum = 0;
 
+        $origRecordCount = $this->recordCount;
         for ($x = 0; $x < $this->sectionCount; $x++) {
             if ($this->fileFormat == 'WDC2') {
                 $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
@@ -596,6 +597,10 @@ class Reader
 
             $this->sectionHeaders[] = $section;
         }
+        foreach ($this->sectionHeaders as &$section) {
+            $section['stringBlockOffset'] = ($origRecordCount - $section['recordCount']) * $this->recordSize;
+        }
+        unset($section);
 
         $this->headerSize = ftell($this->fileHandle) + $this->fieldCount * 4;
 
@@ -994,6 +999,7 @@ class Reader
                             $stringPos += ($recordOffset - $sectionRecordsSkipped) * $this->recordSize; // get to start of this record
                             $stringPos += $byteOffset; // get to start of this field
                             $stringPos += 4 * $valueId; // get to start of this value
+                            $stringPos -= $this->sectionHeaders[$sectionId]['stringBlockOffset'];
                             $stringPos += $value; // add offset from here to the start of the string
                             if ($stringPos < $this->sectionHeaders[$sectionId]['stringBlockPos'] ||
                                 $stringPos >= $this->sectionHeaders[$sectionId]['stringBlockPos'] + $this->sectionHeaders[$sectionId]['stringBlockSize']) {
@@ -1595,6 +1601,7 @@ class Reader
                             $stringPos += $format['offset']; // get to start of this field
                             $stringPos += 4 * $valueId; // get to start of this value
                             $stringPos += $this->sectionHeaders[$sectionId]['offset'] - $this->sectionHeaders[$sectionId]['stringBlockPos'];
+                            $stringPos -= $this->sectionHeaders[$sectionId]['stringBlockOffset'];
                         }
 
                         $field[] = $this->getString($stringPos, $sectionId);
