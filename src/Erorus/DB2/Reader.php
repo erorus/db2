@@ -575,6 +575,8 @@ class Reader
                 $eof += $section['size'] = $section['indexIdListPos'] + $section['indexIdListSize'] - $section['offset'];
             }
 
+            $section['stringBlockOffset'] = ($origRecordCount - $section['recordCount']) * $this->recordSize;
+
             ksort($section);
 
             if ($section['tactkey'] != '0000000000000000') {
@@ -597,10 +599,6 @@ class Reader
 
             $this->sectionHeaders[] = $section;
         }
-        foreach ($this->sectionHeaders as &$section) {
-            $section['stringBlockOffset'] = ($origRecordCount - $section['recordCount']) * $this->recordSize;
-        }
-        unset($section);
 
         $this->headerSize = ftell($this->fileHandle) + $this->fieldCount * 4;
 
