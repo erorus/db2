@@ -42,9 +42,14 @@ if ($record[2] < 0) ...
 $types = $db2Reader->getFieldTypes();
 if ($types['name'] == Reader::FIELD_TYPE_STRING) ...
  
-// Finally, you can load an ADB, as long as you have its parent DB2.
-// The ADB reader will only expose records in the ADB file
+// You can load an ADB or DBCache, as long as you have its parent DB2.
+// That reader will only expose records in the Hotfix/DBCache file.
 $adbReader = $db2Reader->loadAdb("Achievement.adb");
+$dbCacheReader = $db2Reader->loadDBCache("DBCache.bin");
+
+// Finally, you can specify both the DB2 and the DBCache file when constructing a HotfixedReader.
+// This has the same interface as Reader, but will substitute hotfixed records when available.
+$hotReader = new HotfixedReader("Achievement.db2", "DBCache.bin");
 ```
 
 Also check out example.php, which is what I'm using during development.
