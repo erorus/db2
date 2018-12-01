@@ -2,7 +2,7 @@
 
 # DB2 Reader
 
-This is a small library to read DB2 and ADB files (data tables) from World of Warcraft.
+This is a small library to read DB2 and ADB/DBCache files (data tables) from World of Warcraft.
 
 ## Requirements
 
@@ -53,19 +53,20 @@ Also check out example.php, which is what I'm using during development.
 
 | Version | Format | Works | Unit Tests |
 |---------|--------|-------|-------|
-| 3.x - 6.x | WDB2 | Yes | Yes |
-| 7.0.1 | WDB3 | No | No |
-| 7.0.3 | WDB4 | No | No |
-| 7.0.3 - 7.2.0 | WDB5 | Yes | Yes |
-| 7.0.3 - 7.2.0 | WCH7/8 | Yes | No |
-| 7.2.0 - 7.3.2 | WDB6 | Yes | Yes |
-| 7.2.0 - ? | Hotfix.tbl | Yes | No |
-| 7.3.5 | WDC1 | Yes | No |
-| 8.0.1 - ? | WDC2 | Yes | No |
+| 3.x - 6.x | WDB2 | ✓ | ✓ |
+| 7.0.1 | WDB3 |  |  |
+| 7.0.3 | WDB4 |  |  |
+| 7.0.3 - 7.2.0 | WDB5 | ✓ | ✓ |
+| 7.0.3 - 7.2.0 | WCH7/8 | ✓ |  |
+| 7.2.0 - 7.3.2 | WDB6 | ✓ | ✓ |
+| 7.2.0 - ? | DBCache.bin | ✓ |  |
+| 7.3.5 | WDC1 | ✓ |  |
+| 8.0.1 | WDC2 | ✓ |  |
+| 8.1.0 - ? | WDC3 | ✓ |  |
 
-All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc).
+All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc). At this time, encrypted blocks in WDC3 files are simply skipped. We may decrypt them in this library at a later time, or rely on CASC to do so.
 
-ADBs/DBCache/Hotfix require their counterpart DB2 file for necessary metadata.
+ADBs/DBCache require their counterpart DB2 file for necessary metadata, and Internet access to get field sizes via [WoWDBDefs](https://github.com/wowdev/WoWDBDefs).
 
 ## Goals
 
@@ -73,13 +74,13 @@ This is used for The Undermine Journal ([Newsstand](https://github.com/erorus/ne
 
 ## Disclaimers
 
-WDC1 / WDC2 support is preliminary and could use further improvements and code cleanup.
-
 This work is neither endorsed by nor affiliated with Blizzard Entertainment.
 
 ## Thanks
 
 Most of the file format details were found by documentation at [the WoWDev wiki](https://wowdev.wiki/DB2). Thanks to those who contribute there!
+
+Thanks to [WoWDBDefs](https://github.com/wowdev/WoWDBDefs) for providing the table formats used by the game executable so we can parse hotfixes.
 
 ## License
 

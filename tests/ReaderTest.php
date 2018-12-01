@@ -539,7 +539,7 @@ class ReaderTest extends \PHPUnit_Framework_TestCase
             $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongLocale.adb', $db2);
             $this->fail("No exception raised with the wrong locale in the ADB file");
         } catch (Exception $e) {
-            $this->assertEquals("locale of embedstringswronglocale.adb (2) does not match locale of embedstrings.db2 (1)", $e->getMessage());
+            $this->assertEquals("locale of EmbedStringsWrongLocale.adb (2) does not match locale of EmbedStrings.db2 (1)", $e->getMessage());
         }
     }
 
@@ -550,7 +550,7 @@ class ReaderTest extends \PHPUnit_Framework_TestCase
             $adb = new Reader(static::WDB5_PATH . '/EmbedStringsWrongHash.adb', $db2);
             $this->fail("No exception raised with the wrong locale in the ADB file");
         } catch (Exception $e) {
-            $this->assertEquals("layoutHash of embedstringswronghash.adb (2913643194) does not match layoutHash of embedstrings.db2 (4022250974)", $e->getMessage());
+            $this->assertEquals("layoutHash of EmbedStringsWrongHash.adb (2913643194) does not match layoutHash of EmbedStrings.db2 (4022250974)", $e->getMessage());
         }
     }
 

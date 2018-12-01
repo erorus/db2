@@ -81,7 +81,7 @@ class Reader
             if ($this->fileHandle === false) {
                 throw new \Exception("Error opening ".$db2path);
             }
-            $this->fileName = strtolower(basename($db2path));
+            $this->fileName = basename($db2path);
         } else {
             throw new \Exception("Must supply path to DB2 file");
         }
@@ -461,6 +461,7 @@ class Reader
                 'type' => static::FIELD_TYPE_INT,
                 'valueCount' => 1,
                 'signed' => false,
+                'isRelationshipData' => true,
                 'storage' => [
                     'storageType' => static::FIELD_COMPRESSION_NONE
                 ]
@@ -734,6 +735,7 @@ class Reader
                 'type' => static::FIELD_TYPE_INT,
                 'valueCount' => 1,
                 'signed' => false,
+                'isRelationshipData' => true,
                 'storage' => [
                     'storageType' => static::FIELD_COMPRESSION_NONE
                 ]
@@ -852,14 +854,42 @@ class Reader
         $this->hasEmbeddedStrings = ($this->flags & 1) > 0;
         $this->hasIdBlock = ($this->flags & 4) > 0;
 
+        $def = $sourceReader->getDBDef();
+        $def = array_values(array_filter($def, function($a) { return !isset($a['annotations']['noninline']); }));
+
+        $alternateRelationshipColumn = null;
+
         $this->recordFormat = $sourceReader->recordFormat;
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
-            if ($fieldAttributes['type'] == static::FIELD_TYPE_INT && $fieldAttributes['valueLength'] == 3) {
-                $fieldAttributes['valueLength'] = 4;
-                $fieldAttributes['size'] = 4;
-                $fieldAttributes['bitShift'] = 0;
+            // Only modify the sizes of ints
+            if ($fieldAttributes['type'] == self::FIELD_TYPE_INT) {
+                if (isset($fieldAttributes['isRelationshipData'])) {
+                    $fieldAttributes['size'] = 0;
+                    if (!is_null($alternateRelationshipColumn)) {
+                        $fieldAttributes['alternateRelationshipColumn'] = $alternateRelationshipColumn;
+                    }
+                } elseif (isset($def[$fieldId]['size'])) {
+                    $fieldAttributes['size'] = ceil($def[$fieldId]['size'] / 8);
+                    if (isset($def[$fieldId]['annotations']['relation'])) {
+                        $alternateRelationshipColumn = $fieldId;
+                    }
+                } elseif (in_array($fieldAttributes['size'], [3, 4, 8])) {
+                    $fieldAttributes['size'] = 4 * ceil($fieldAttributes['size'] / 4);
+                } else {
+                    throw new \Exception(
+                        sprintf(
+                            "Could not determine field size for field index %d in table %s (Original size %d)",
+                            $fieldId,
+                            str_pad(strtoupper(dechex($this->layoutHash)), 8, '0', STR_PAD_LEFT),
+                            $fieldAttributes['size']
+                        )
+                    );
+                }
             }
+            $fieldAttributes['valueLength'] = $fieldAttributes['size'];
+
             unset($fieldAttributes['offset']); // just to make sure we don't use them later, because they're meaningless now
+            unset($fieldAttributes['storage']); // no field compression in use
         }
         unset($fieldAttributes);
 
@@ -883,6 +913,79 @@ class Reader
             }
             fseek($this->fileHandle, $recordHeader['size'], SEEK_CUR);
         }
+    }
+
+    /**
+     * Fetch the table definition from https://github.com/wowdev/WoWDBDefs
+     *
+     * @return array
+     */
+    private function getDBDef() {
+        $baseName = preg_replace('/\.[\w\W]*/', '', $this->fileName);
+        $url = sprintf('https://raw.githubusercontent.com/wowdev/WoWDBDefs/master/definitions/%s.dbd', $baseName);
+
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS      => 3,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_CONNECTTIMEOUT => 6,
+            CURLOPT_ENCODING       => 'gzip',
+        ]);
+        $data = curl_exec($ch);
+        $responseCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!preg_match('/^2\d\d/', $responseCode) || !$data) {
+            return [];
+        }
+
+        $result = [];
+        $foundLayout = false;
+        $layoutHex = str_pad(strtoupper(dechex($this->layoutHash)), 8, '0', STR_PAD_LEFT);
+
+        $lines = explode("\n", $data);
+        foreach ($lines as $line) {
+            if (!$foundLayout) {
+                if (preg_match('/^LAYOUT /', $line)) {
+                    $layouts = explode(',', str_replace(' ', '', substr($line, 7)));
+                    $foundLayout = in_array($layoutHex, $layouts);
+                }
+            } else {
+                if (!trim($line)) {
+                    break;
+                }
+                if (preg_match('/^(?:BUILD|COMMENT) /', $line)) {
+                    continue;
+                }
+                $col = [];
+                if (preg_match('/\/\/([\w\W]+)/', $line, $res)) {
+                    $col['comment'] = $res[1];
+                    $line = trim(str_replace($res[0], '', $line));
+                }
+                if (preg_match('/\$([^\$]+)\$/', $line, $res)) {
+                    $col['annotations'] = array_fill_keys(explode(',', $res[1]), true);
+                    $line = trim(str_replace($res[0], '', $line));
+                }
+                if (preg_match('/<(u)?(\d+)>/', $line, $res)) {
+                    if ($res[1]) {
+                        $col['unsigned'] = true;
+                    }
+                    $col['size'] = $res[2];
+                    $line = trim(str_replace($res[0], '', $line));
+                }
+                if (preg_match('/\[(\d+)\]/', $line, $res)) {
+                    $col['count'] = $res[1];
+                    $line = trim(str_replace($res[0], '', $line));
+                }
+                $col['name'] = $line;
+                $result[] = $col;
+            }
+        }
+
+        return $result;
     }
 
     private function detectEmbeddedStringFields()
@@ -1010,7 +1113,7 @@ class Reader
                             }
                         }
                         if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
-                            $distinctValues[$stringPos] = true;
+                            $distinctValues[$value] = true;
                         }
                         if ($couldBeString && (!$this->sectionCount || $stringPos > $this->sectionHeaders[$sectionId]['stringBlockPos'])) {
                             // offset should be the start of a string
@@ -1576,6 +1679,9 @@ class Reader
                                 case 1:
                                     $field[] = current(unpack('c', $rawValue));
                                     break;
+                                case 0:
+                                    $field[] = 0;
+                                    break;
                             }
                         } else {
                             if ($format['size'] == 8) {
@@ -1608,6 +1714,9 @@ class Reader
             }
             if ($valueId == 1) {
                 $field = $field[0];
+                if (isset($format['alternateRelationshipColumn'])) {
+                    $field = $row[$format['alternateRelationshipColumn']];
+                }
             }
             $row[isset($format['name']) ? $format['name'] : $fieldId] = $field;
         }
