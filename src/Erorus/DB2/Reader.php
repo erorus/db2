@@ -857,7 +857,7 @@ class Reader
         $def = $sourceReader->getDBDef();
         $def = array_values(array_filter($def, function($a) { return !isset($a['annotations']['noninline']); }));
 
-        $alternateRelationshipColumn = null;
+        $alternateRelationshipColumn = false;
 
         $this->recordFormat = $sourceReader->recordFormat;
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
@@ -865,13 +865,14 @@ class Reader
             if ($fieldAttributes['type'] == self::FIELD_TYPE_INT) {
                 if (isset($fieldAttributes['isRelationshipData'])) {
                     $fieldAttributes['size'] = 0;
-                    if (!is_null($alternateRelationshipColumn)) {
-                        $fieldAttributes['alternateRelationshipColumn'] = $alternateRelationshipColumn;
+                    if ($alternateRelationshipColumn) {
+                        $fieldAttributes['alternateRelationshipColumnTarget'] = true;
                     }
                 } elseif (isset($def[$fieldId]['size'])) {
                     $fieldAttributes['size'] = ceil($def[$fieldId]['size'] / 8);
                     if (isset($def[$fieldId]['annotations']['relation'])) {
-                        $alternateRelationshipColumn = $fieldId;
+                        $fieldAttributes['alternateRelationshipColumnSource'] = true;
+                        $alternateRelationshipColumn = true;
                     }
                 } elseif (in_array($fieldAttributes['size'], [3, 4, 8])) {
                     $fieldAttributes['size'] = 4 * ceil($fieldAttributes['size'] / 4);
@@ -1611,6 +1612,7 @@ class Reader
 
         $fieldMax = $id === false ? $this->fieldCount : $this->totalFieldCount; // do not search wdb6 common table when we don't know IDs yet
 
+        $relationshipValue = null;
         $runningOffset = 0;
         $row = [];
         for ($fieldId = 0; $fieldId < $fieldMax; $fieldId++) {
@@ -1714,9 +1716,11 @@ class Reader
             }
             if ($valueId == 1) {
                 $field = $field[0];
-                if (isset($format['alternateRelationshipColumn'])) {
-                    $field = $row[$format['alternateRelationshipColumn']];
-                }
+            }
+            if (isset($format['alternateRelationshipColumnSource'])) {
+                $relationshipValue = $field;
+            } elseif (isset($format['alternateRelationshipColumnTarget']) && !is_null($relationshipValue)) {
+                $field = $relationshipValue;
             }
             $row[isset($format['name']) ? $format['name'] : $fieldId] = $field;
         }
