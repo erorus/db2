@@ -71,10 +71,6 @@ class HotfixedReader
         return $this->db2->getLayoutHash();
     }
 
-    public function getSkippedCounts() {
-        return $this->db2->getSkippedCounts();
-    }
-
     // user preferences
 
     public function setFieldsSigned(Array $fields) {

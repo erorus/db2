@@ -56,9 +56,6 @@ class Reader
     private $sectionCount = 0;
     private $sectionHeaders = [];
 
-    private $skippedSectionsCount = 0;
-    private $skippedRecordsCount = 0;
-
     private $idField = -1;
 
     private $hasEmbeddedStrings = false;
@@ -523,7 +520,6 @@ class Reader
         $hasRelationshipData = false;
         $recordCountSum = 0;
 
-        $origRecordCount = $this->recordCount;
         for ($x = 0; $x < $this->sectionCount; $x++) {
             if ($this->fileFormat == 'WDC2') {
                 $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
@@ -576,24 +572,16 @@ class Reader
                 $eof += $section['size'] = $section['indexIdListPos'] + $section['indexIdListSize'] - $section['offset'];
             }
 
-            $section['stringBlockOffset'] = ($origRecordCount - $section['recordCount']) * $this->recordSize;
+            $section['encrypted'] = false;
+            if ($section['tactkey'] != '0000000000000000') {
+                // Determine whether this section is available if it starts with any non-zero bytes
+                $workingPos = ftell($this->fileHandle);
+                fseek($this->fileHandle, $section['offset']);
+                $section['encrypted'] = !trim(fread($this->fileHandle, min(1024, $section['size'])), "\0");
+                fseek($this->fileHandle, $workingPos);
+            }
 
             ksort($section);
-
-            if ($section['tactkey'] != '0000000000000000') {
-                // Don't try to decrypt or even read
-                // TODO: When CASC decrypts this chunk, will we be able to read it like any other chunk?
-
-                $this->sectionCount--;
-                $x--;
-
-                $this->recordCount -= $section['recordCount'];
-
-                $this->skippedSectionsCount++;
-                $this->skippedRecordsCount += $section['recordCount'];
-
-                continue;
-            }
 
             $hasRelationshipData |= $section['relationshipDataSize'] > 0;
             $recordCountSum += $section['recordCount'];
@@ -619,12 +607,6 @@ class Reader
             if (!$this->hasIdBlock) {
                 throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
-
-            if ($this->sectionCount != 1) {
-                throw new \Exception(sprintf('File has embedded strings and %d sections, expected 1, aborting', $this->sectionCount));
-            }
-
-            $this->indexBlockPos = $this->sectionHeaders[0]['indexBlockPos'];
         }
 
         $this->fieldStorageInfoPos = $this->headerSize;
@@ -1003,6 +985,10 @@ class Reader
             $recordOffset = 0;
             while ($couldBeString && $recordOffset < $this->recordCount) {
                 $data = $this->getRawRecord($recordOffset);
+                if (is_null($data)) {
+                    $recordOffset++;
+                    continue;
+                }
 
                 $byteOffset = 0;
                 for ($offsetFieldId = 0; $offsetFieldId < $fieldId; $offsetFieldId++) {
@@ -1056,14 +1042,17 @@ class Reader
             $couldBeString = !$this->hasEmbeddedStrings;
             $recordOffset = 0;
             $distinctValues = [];
-            $sectionId = -1;
 
             while (($couldBeString || $couldBeFloat) && $recordOffset < $this->recordCount) {
                 $data = $this->getRawRecord($recordOffset);
+                if (is_null($data)) {
+                    $recordOffset++;
+                    continue;
+                }
                 if ($this->sectionCount) {
                     $sectionRecordsSkipped = 0;
                     for ($sectionId = 0; $sectionId < $this->sectionCount; $sectionId++) {
-                        if ($recordOffset - $sectionRecordsSkipped <= $this->sectionHeaders[$sectionId]['recordCount']) {
+                        if ($recordOffset - $sectionRecordsSkipped < $this->sectionHeaders[$sectionId]['recordCount']) {
                             break;
                         }
                         $sectionRecordsSkipped += $this->sectionHeaders[$sectionId]['recordCount'];
@@ -1097,15 +1086,26 @@ class Reader
                     }
                     if ($couldBeString) {
                         if ($this->sectionCount) {
-                            $stringPos = $this->sectionHeaders[$sectionId]['offset']; // start at top of block
-                            $stringPos += ($recordOffset - $sectionRecordsSkipped) * $this->recordSize; // get to start of this record
-                            $stringPos += $byteOffset; // get to start of this field
-                            $stringPos += 4 * $valueId; // get to start of this value
-                            $stringPos -= $this->sectionHeaders[$sectionId]['stringBlockOffset'];
-                            $stringPos += $value; // add offset from here to the start of the string
-                            if ($stringPos < $this->sectionHeaders[$sectionId]['stringBlockPos'] ||
-                                $stringPos >= $this->sectionHeaders[$sectionId]['stringBlockPos'] + $this->sectionHeaders[$sectionId]['stringBlockSize']) {
+                            // Start with our odd offset
+                            $stringPos = $value;
+                            // Move back to first value of field
+                            $stringPos += 4 * $valueId;
+                            // Move back to start of row
+                            $stringPos += $byteOffset;
+                            // Move back to start of first record
+                            $stringPos += $recordOffset * $this->recordSize;
+                            // Advance past all data records
+                            $stringPos -= $this->recordCount * $this->recordSize;
+
+                            if ($stringPos < 0 || $stringPos >= $this->stringBlockSize) {
                                 $couldBeString = false;
+                            } else {
+                                try {
+                                    $sectionPos = $stringPos;
+                                    $stringPos  = $this->getStringFileOffset($sectionPos);
+                                } catch (\Exception $e) {
+                                    $couldBeString = false;
+                                }
                             }
                         } else {
                             $stringPos = $this->stringBlockPos + $value;
@@ -1116,7 +1116,7 @@ class Reader
                         if (count($distinctValues) < static::DISTINCT_STRINGS_REQUIRED) {
                             $distinctValues[$value] = true;
                         }
-                        if ($couldBeString && (!$this->sectionCount || $stringPos > $this->sectionHeaders[$sectionId]['stringBlockPos'])) {
+                        if ($couldBeString && (!$this->sectionCount || $sectionPos > 0)) {
                             // offset should be the start of a string
                             // so the char immediately before should be the null terminator of the prev string
                             fseek($this->fileHandle, $stringPos - 1);
@@ -1234,6 +1234,9 @@ class Reader
 
             for ($z = 0; $z < $sectionCount; $z++) {
                 if ($this->sectionCount) {
+                    if ($this->sectionHeaders[$z]['encrypted']) {
+                        continue;
+                    }
                     $recordCount = $this->sectionHeaders[$z]['recordCount'];
                 }
                 if ($idOffset !== false) {
@@ -1262,8 +1265,11 @@ class Reader
             if ($this->sectionCount) {
                 $recIndex = 0;
                 for ($z = 0; $z < $this->sectionCount; $z++) {
+                    if ($this->sectionHeaders[$z]['encrypted']) {
+                        continue;
+                    }
                     fseek($this->fileHandle, $this->sectionHeaders[$z]['idBlockPos']);
-                    for ($x = 0; $x < $this->recordCount; $x++) {
+                    for ($x = 0; $x < $this->sectionHeaders[$z]['recordCount']; $x++) {
                         $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $recIndex++;
                     }
                 }
@@ -1314,32 +1320,40 @@ class Reader
         // only required when hasEmbeddedStrings,
         // since it has the index block to map back into the data block
 
-        $idList = [];
-        if (isset($this->sectionHeaders[0]['indexIdListSize']) && $this->sectionHeaders[0]['indexIdListSize']) {
-            fseek($this->fileHandle, $this->sectionHeaders[0]['indexIdListPos']);
-            $idList = array_values(unpack('V*', fread($this->fileHandle, $this->sectionHeaders[0]['indexIdListSize'])));
+        $idLists = [];
+        foreach ($this->sectionHeaders as $sectionId => $section) {
+            if (isset($section['indexIdListSize']) && $section['indexIdListSize'] && !$section['encrypted']) {
+                fseek($this->fileHandle, $section['indexIdListPos']);
+                $idLists[$sectionId] = array_values(unpack('V*', fread($this->fileHandle, $section['indexIdListSize'])));
+            }
         }
 
         $this->recordOffsets = [];
-        if (!$idList) {
+        if (!$idLists) {
             if ($this->hasIdsInIndexBlock) {
                 $this->idMap = [];
-                $idList = range(0, $this->recordCount - 1);
+                $idLists[0] = range(0, $this->recordCount - 1);
             } else {
-                $idList = range($this->minId, $this->maxId);
+                $idLists[0] = range($this->minId, $this->maxId);
             }
         }
-        fseek($this->fileHandle, $this->indexBlockPos);
-        foreach ($idList as $x) {
-            if ($this->hasIdsInIndexBlock) {
-                $pointer = unpack('Vid/Vpos/vsize', fread($this->fileHandle, 10));
-                $this->idMap[$pointer['id']] = $x;
-            } else {
-                $pointer = unpack('Vpos/vsize', fread($this->fileHandle, 6));
-                $pointer['id'] = $x;
+        foreach ($idLists as $sectionId => $idList) {
+            $pos = $this->indexBlockPos;
+            if (isset($this->sectionHeaders[$sectionId]['indexBlockPos'])) {
+                $pos = $this->sectionHeaders[$sectionId]['indexBlockPos'];
             }
-            if ($pointer['size'] > 0 && isset($this->idMap[$pointer['id']])) {
-                $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
+            fseek($this->fileHandle, $pos);
+            foreach ($idList as $x) {
+                if ($this->hasIdsInIndexBlock) {
+                    $pointer = unpack('Vid/Vpos/vsize', fread($this->fileHandle, 10));
+                    $this->idMap[$pointer['id']] = $x;
+                } else {
+                    $pointer = unpack('Vpos/vsize', fread($this->fileHandle, 6));
+                    $pointer['id'] = $x;
+                }
+                if ($pointer['size'] > 0 && isset($this->idMap[$pointer['id']])) {
+                    $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
+                }
             }
         }
 
@@ -1465,9 +1479,13 @@ class Reader
             if ($this->sectionCount) {
                 $offsetSearch = 0;
                 foreach ($this->sectionHeaders as $sectionHeader) {
-                    if ($recordOffset - $offsetSearch > $sectionHeader['recordCount']) {
+                    if ($recordOffset - $offsetSearch >= $sectionHeader['recordCount']) {
                         $offsetSearch += $sectionHeader['recordCount'];
                         continue;
+                    }
+
+                    if ($sectionHeader['encrypted']) {
+                        return null;
                     }
 
                     $relationshipDataSize = $sectionHeader['relationshipDataSize'];
@@ -1569,6 +1587,27 @@ class Reader
         return isset($this->recordFormat[$fieldId]['commonCache'][$id]) ?
             $this->recordFormat[$fieldId]['commonCache'][$id] :
             $this->recordFormat[$fieldId]['storage']['defaultValue'];
+    }
+
+    /**
+     * Given an offset into the combined string block across all sections, return the offset in this file to reach
+     * that string. $stringBlockOffset is modified to the offset within the found string block, and $foundSectionId
+     * returns the section ID where that string block is.
+     *
+     * @param int $stringBlockOffset
+     * @param int|null $foundSectionId
+     * @return int
+     */
+    private function getStringFileOffset(&$stringBlockOffset, &$foundSectionId = null) {
+        foreach ($this->sectionHeaders as $sectionId => $section) {
+            if ($stringBlockOffset < $section['stringBlockSize']) {
+                $foundSectionId = $sectionId;
+                return $section['stringBlockPos'] + $stringBlockOffset;
+            }
+            $stringBlockOffset -= $section['stringBlockSize'];
+        }
+
+        throw new \Exception("Searched past all string blocks");
     }
 
     private function getString($stringBlockOffset, $sectionId) {
@@ -1701,16 +1740,23 @@ class Reader
                         break;
                     case static::FIELD_TYPE_STRING:
                         $stringPos = current(unpack('V', $rawValue));
+                        $stringSection = -1;
 
                         if ($sectionId >= 0) {
-                            $stringPos += ($recordOffset - $sectionRecordsSkipped) * $this->recordSize; // get to start of this record
-                            $stringPos += $format['offset']; // get to start of this field
-                            $stringPos += 4 * $valueId; // get to start of this value
-                            $stringPos += $this->sectionHeaders[$sectionId]['offset'] - $this->sectionHeaders[$sectionId]['stringBlockPos'];
-                            $stringPos -= $this->sectionHeaders[$sectionId]['stringBlockOffset'];
+                            // Move back to first value of field
+                            $stringPos += 4 * $valueId;
+                            // Move back to start of row
+                            $stringPos += $format['offset'];
+                            // Move back to start of first record
+                            $stringPos += $recordOffset * $this->recordSize;
+                            // Advance past all data records
+                            $stringPos -= $this->recordCount * $this->recordSize;
+
+                            // Modify stringPos to offset within correct string block, and get section of that block
+                            $this->getStringFileOffset($stringPos, $stringSection);
                         }
 
-                        $field[] = $this->getString($stringPos, $sectionId);
+                        $field[] = $this->getString($stringPos, $stringSection);
                         break;
                 }
             }
@@ -1765,13 +1811,6 @@ class Reader
 
     public function getLayoutHash() {
         return $this->layoutHash;
-    }
-
-    public function getSkippedCounts() {
-        return [
-            'sections' => $this->skippedSectionsCount,
-            'records' => $this->skippedRecordsCount,
-        ];
     }
 
     public function loadAdb($adbPath) {
