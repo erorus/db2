@@ -1234,10 +1234,11 @@ class Reader
 
             for ($z = 0; $z < $sectionCount; $z++) {
                 if ($this->sectionCount) {
+                    $recordCount = $this->sectionHeaders[$z]['recordCount'];
                     if ($this->sectionHeaders[$z]['encrypted']) {
+                        $recIndex += $recordCount;
                         continue;
                     }
-                    $recordCount = $this->sectionHeaders[$z]['recordCount'];
                 }
                 if ($idOffset !== false) {
                     // attempt shortcut so we don't have to parse the whole record
@@ -1266,6 +1267,7 @@ class Reader
                 $recIndex = 0;
                 for ($z = 0; $z < $this->sectionCount; $z++) {
                     if ($this->sectionHeaders[$z]['encrypted']) {
+                        $recIndex += $this->sectionHeaders[$z]['recordCount'];
                         continue;
                     }
                     fseek($this->fileHandle, $this->sectionHeaders[$z]['idBlockPos']);
@@ -1463,10 +1465,30 @@ class Reader
     // general purpose for internal use
 
     private function getRawRecord($recordOffset, $id = false) {
+        $relationshipRecordSize = 8;
         $relationshipDataSize = $this->relationshipDataSize;
         $relationshipDataPos = $this->relationshipDataPos;
+        $relationshipOffset = $recordOffset * $relationshipRecordSize + 12;
+        $recordOffsetInSection = $recordOffset;
 
         if (!is_null($this->recordOffsets)) {
+            if (!isset($this->recordOffsets[$recordOffset])) {
+                // This is probably in an encrypted section. Double-check.
+                if ($this->sectionCount) {
+                    $offsetSearch = 0;
+                    foreach ($this->sectionHeaders as $sectionHeader) {
+                        if ($recordOffset - $offsetSearch >= $sectionHeader['recordCount']) {
+                            $offsetSearch += $sectionHeader['recordCount'];
+                            continue;
+                        }
+                        if ($sectionHeader['encrypted']) {
+                            // As we expected.
+                            return null;
+                        }
+                    }
+                }
+                throw new \Exception("Requested record offset $recordOffset which was not defined");
+            }
             $pointer = $this->recordOffsets[$recordOffset];
             if ($pointer['size'] == 0) {
                 // @codeCoverageIgnoreStart
@@ -1481,6 +1503,8 @@ class Reader
                 foreach ($this->sectionHeaders as $sectionHeader) {
                     if ($recordOffset - $offsetSearch >= $sectionHeader['recordCount']) {
                         $offsetSearch += $sectionHeader['recordCount'];
+                        $relationshipOffset -= $relationshipRecordSize * $sectionHeader['recordCount'];
+                        $recordOffsetInSection -= $sectionHeader['recordCount'];
                         continue;
                     }
 
@@ -1519,7 +1543,6 @@ class Reader
         }
 
         if ($relationshipDataSize) {
-            $relationshipOffset = $recordOffset * 8 + 12;
             if ($relationshipOffset >= $relationshipDataSize) {
                 throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
                     $relationshipOffset, $relationshipDataSize));
@@ -1529,9 +1552,9 @@ class Reader
             $data .= fread($this->fileHandle, 4);
 
             $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
-            if ($relationshipOffset != $recordOffset) {
-                throw new \Exception(sprintf("Record offset %d attempted read of relationship offset %d",
-                    $recordOffset, $relationshipOffset));
+            if ($relationshipOffset != $recordOffsetInSection) {
+                throw new \Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
+                    $recordOffset, $recordOffsetInSection, $relationshipOffset));
             }
         }
         return $data;
@@ -1638,6 +1661,9 @@ class Reader
         }
 
         $record = $this->getRawRecord($recordOffset, $id);
+        if (is_null($record)) {
+            throw new \Exception("Trying to read null record $recordOffset");
+        }
         $sectionId = -1;
         $sectionRecordsSkipped = 0;
         if ($this->sectionCount) {
