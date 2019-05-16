@@ -119,6 +119,7 @@ class Reader
                     break;
                 case 'WDC2':
                 case 'WDC3':
+                case '1SLC':
                     if (!is_null($arg) && !is_array($arg)) {
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
@@ -487,6 +488,8 @@ class Reader
     private function openWdc2($stringFields) {
         $headerFormat = 'V9x/v2y/V7z';
 
+        $isWdc2 = $this->fileFormat == 'WDC2' || $this->fileFormat == '1SLC';
+
         fseek($this->fileHandle, 4);
         $parts = array_values(unpack($headerFormat, fread($this->fileHandle, 68)));
 
@@ -521,7 +524,7 @@ class Reader
         $recordCountSum = 0;
 
         for ($x = 0; $x < $this->sectionCount; $x++) {
-            if ($this->fileFormat == 'WDC2') {
+            if ($isWdc2) {
                 $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VcopyBlockSize/VindexBlockPos/VidBlockSize/VrelationshipDataSize', fread($this->fileHandle, 4 * 9));
             } else {
                 $section = unpack('a8tactkey/Voffset/VrecordCount/VstringBlockSize/VindexRecordsEnd/VidBlockSize/VrelationshipDataSize/VindexBlockCount/VcopyBlockCount', fread($this->fileHandle, 4*10));
@@ -532,7 +535,7 @@ class Reader
                 $section['stringBlockPos'] = $section['offset'] + ($section['recordCount'] * $this->recordSize);
             } else {
                 // Essentially set up id block to start after a non-existent string block
-                if ($this->fileFormat == 'WDC2') {
+                if ($isWdc2) {
                     // indexBlockPos in section headers
                     $section['indexBlockSize'] = 6 * ($this->maxId - $this->minId + 1);
 
@@ -547,13 +550,13 @@ class Reader
             // isBlockSize in section headers
 
             $section['copyBlockPos'] = $section['idBlockPos'] + $section['idBlockSize'];
-            if ($this->fileFormat == 'WDC2') {
+            if ($isWdc2) {
                 // copyBlockSize in section headers
             } else {
                 $section['copyBlockSize'] = $section['copyBlockCount'] * 8;
             }
 
-            if ($this->fileFormat == 'WDC2') {
+            if ($isWdc2) {
                 $section['relationshipDataPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
             } else {
                 $section['indexBlockPos'] = $section['copyBlockPos'] + $section['copyBlockSize'];
@@ -563,7 +566,7 @@ class Reader
             }
             // relationshipDataSize in section headers
 
-            if ($this->fileFormat == 'WDC2') {
+            if ($isWdc2) {
                 $eof += $section['size'] = $section['relationshipDataPos'] + $section['relationshipDataSize'] - $section['offset'];
             } else {
                 $section['indexIdListPos'] = $section['relationshipDataPos'] + $section['relationshipDataSize'];
@@ -1196,6 +1199,8 @@ class Reader
 
         // each value in the pallet takes up 4 bytes, but sometimes fewer bytes represent the value and the rest are junk
         // this tries to guess how many bytes represent the value by seeing what junk bytes exist in all pallet locations
+
+        // note: this will be incorrect if all the values in the pallet share the same upper non-zero bytes
 
         $first = str_split(fread($this->fileHandle, 4));
         $sameCount = 3;

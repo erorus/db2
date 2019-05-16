@@ -67,9 +67,12 @@ Also check out example.php, which is what I'm using during development.
 | 7.2.0 - ? | DBCache.bin | ✓ |  |
 | 7.3.5 | WDC1 | ✓ |  |
 | 8.0.1 | WDC2 | ✓ |  |
+| 1.13.2 | 1SLC | ✓ |  |
 | 8.1.0 - ? | WDC3 | ✓ |  |
 
-All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc). At this time, encrypted blocks in WDC3 files are simply skipped. We may decrypt them in this library at a later time, or rely on CASC to do so.
+All features of DB2 files should be supported (offset map / embedded strings, copy blocks, common blocks, pallet data, etc).
+
+Encrypted blocks are expected to be decrypted by your CASC tool before being read by this library. For blocks that cannot be decrypted (because the key is unknown, for example), your CASC tool should substitute NUL bytes for the length of the encrypted blocks. DB2Reader ignores blocks which are encrypted and are empty of data. 
 
 ADBs/DBCache require their counterpart DB2 file for necessary metadata, and Internet access to get field sizes via [WoWDBDefs](https://github.com/wowdev/WoWDBDefs).
 
