@@ -1565,8 +1565,8 @@ class Reader
         return $data;
     }
 
-    // returns unsigned 32-bit int from little endian
-    private function extractValueFromBitstring($bitString, $bitOffset, $bitLength) {
+    // returns signed 32-bit int from little endian
+    private function extractValueFromBitstring($bitString, $bitOffset, $bitLength, $extendSign) {
         if ($bitOffset >= 8) {
             $bitString = substr($bitString, floor($bitOffset / 8));
             $bitOffset &= 7;
@@ -1577,6 +1577,11 @@ class Reader
         $mask = ((gmp_init(1) << $bitLength) - 1);
 
         $gmp = gmp_and($gmp >> $bitOffset, $mask);
+
+        // This is a signed field, and the msb is set, so it's negative. Flip the sign.
+        if ($extendSign && gmp_and($gmp, 1 << ($bitLength - 1)) > 0) {
+            $gmp = $gmp - $mask - 1;
+        }
 
         return gmp_intval($gmp);
     }
@@ -1695,8 +1700,12 @@ class Reader
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                         case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
                         case static::FIELD_COMPRESSION_BITPACKED_SIGNED:
-                            $rawValue = static::extractValueFromBitstring(substr($record, $format['offset'], $format['valueLength']),
-                                $format['storage']['offsetBits'] % 8, $format['storage']['sizeBits']);
+                            $rawValue = static::extractValueFromBitstring(
+                                substr($record, $format['offset'], $format['valueLength']),
+                                $format['storage']['offsetBits'] % 8,
+                                $format['storage']['sizeBits'],
+                                $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED
+                            );
 
                             if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED ||
                                 $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED) {
