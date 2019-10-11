@@ -1307,7 +1307,7 @@ class Reader
         }
 
         foreach ($sections as &$section) {
-            if ($section['copyBlockSize']) {
+            if ($section['copyBlockSize'] && !$section['encrypted']) {
                 fseek($this->fileHandle, $section['copyBlockPos']);
                 $entryCount = floor($section['copyBlockSize'] / 8);
                 for ($x = 0; $x < $entryCount; $x++) {
