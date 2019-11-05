@@ -892,10 +892,16 @@ class Reader
         unset($fieldAttributes);
 
         $this->recordOffsets = [];
-        $recordHeaderSize = 4 * 7;
+        if ($hotfixVersion < 7) {
+            $recordHeaderSize = 4 * 7;
+            $unpackFormat = 'a4magic/Vunk1/Vunk2/Vsize/Vtable/Vid/Vunk3';
+        } else {
+            $recordHeaderSize = 4 * 6;
+            $unpackFormat = 'a4magic/Vunk1/Vtable/Vid/Vsize/Vunk2';
+        }
 
         while (ftell($this->fileHandle) + $recordHeaderSize < $this->fileSize) {
-            $recordHeader = unpack('a4magic/Vunk1/Vunk2/Vsize/Vtable/Vid/Vunk3', fread($this->fileHandle, $recordHeaderSize));
+            $recordHeader = unpack($unpackFormat, fread($this->fileHandle, $recordHeaderSize));
             if ($recordHeader['magic'] != 'XFTH') {
                 throw new \Exception(sprintf("Missing expected XFTH record header at position %d", ftell($this->fileHandle) - $recordHeaderSize));
             }
