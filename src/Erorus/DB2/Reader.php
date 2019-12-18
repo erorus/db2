@@ -589,6 +589,18 @@ class Reader
             $hasRelationshipData |= $section['relationshipDataSize'] > 0;
             $recordCountSum += $section['recordCount'];
 
+            $section['relationshipDataLookup'] = [];
+            if (!$section['encrypted'] && $section['relationshipDataSize'] > 0) {
+                $workingPos = ftell($this->fileHandle);
+                fseek($this->fileHandle, $section['relationshipDataPos']);
+                $relationshipHeader = unpack('Vcount/Vmin/Vmax', fread($this->fileHandle, 4 * 3));
+                for ($relX = 0; $relX < $relationshipHeader['count']; $relX++) {
+                    $relationshipData = fread($this->fileHandle, 4);
+                    $section['relationshipDataLookup'][current(unpack('V', fread($this->fileHandle, 4)))] = $relationshipData;
+                }
+                fseek($this->fileHandle, $workingPos);
+            }
+
             $this->sectionHeaders[] = $section;
         }
 
@@ -1473,6 +1485,7 @@ class Reader
         $relationshipRecordSize = 8;
         $relationshipDataSize = $this->relationshipDataSize;
         $relationshipDataPos = $this->relationshipDataPos;
+        $relationshipDataLookup = null;
         $relationshipOffset = $recordOffset * $relationshipRecordSize + 12;
         $recordOffsetInSection = $recordOffset;
 
@@ -1519,6 +1532,7 @@ class Reader
 
                     $relationshipDataSize = $sectionHeader['relationshipDataSize'];
                     $relationshipDataPos = $sectionHeader['relationshipDataPos'];
+                    $relationshipDataLookup = $sectionHeader['relationshipDataLookup'];
 
                     fseek($this->fileHandle, $sectionHeader['offset'] + ($recordOffset - $offsetSearch) * $this->recordSize);
                     $offsetSearch = false;
@@ -1548,18 +1562,29 @@ class Reader
         }
 
         if ($relationshipDataSize) {
-            if ($relationshipOffset >= $relationshipDataSize) {
-                throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
-                    $relationshipOffset, $relationshipDataSize));
-            }
+            if (isset($relationshipDataLookup)) {
+                // Preferred path, use lookup build during header read.
+                $indexInSection = $recordOffset - $offsetSearch;
+                if (isset($relationshipDataLookup[$indexInSection])) {
+                    $data .= $relationshipDataLookup[$indexInSection];
+                } else {
+                    $data .= "\0\0\0\0";
+                }
+            } else {
+                // Legacy path.
+                if ($relationshipOffset >= $relationshipDataSize) {
+                    throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
+                        $relationshipOffset, $relationshipDataSize));
+                }
 
-            fseek($this->fileHandle, $relationshipDataPos + $relationshipOffset);
-            $data .= fread($this->fileHandle, 4);
+                fseek($this->fileHandle, $relationshipDataPos + $relationshipOffset);
+                $data .= fread($this->fileHandle, 4);
 
-            $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
-            if ($relationshipOffset != $recordOffsetInSection) {
-                throw new \Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
-                    $recordOffset, $recordOffsetInSection, $relationshipOffset));
+                $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
+                if ($relationshipOffset != $recordOffsetInSection) {
+                    throw new \Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
+                        $recordOffset, $recordOffsetInSection, $relationshipOffset));
+                }
             }
         }
         return $data;
