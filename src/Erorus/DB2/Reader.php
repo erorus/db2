@@ -873,6 +873,8 @@ class Reader
                     }
                 } elseif (in_array($fieldAttributes['size'], [3, 4, 8])) {
                     $fieldAttributes['size'] = 4 * ceil($fieldAttributes['size'] / 4);
+                } elseif (in_array($fieldAttributes['size'], [1, 2])) {
+                    // Assume this stays the same?
                 } else {
                     throw new \Exception(
                         sprintf(
