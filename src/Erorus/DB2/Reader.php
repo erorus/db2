@@ -1073,7 +1073,8 @@ class Reader
             }
 
             $couldBeFloat = true;
-            $couldBeString = !$this->hasEmbeddedStrings && $format['storage']['storageType'] === static::FIELD_COMPRESSION_NONE;
+            $couldBeString = !$this->hasEmbeddedStrings &&
+                 (!isset($format['storage']) || $format['storage']['storageType'] === static::FIELD_COMPRESSION_NONE);
             $recordOffset = 0;
             $distinctValues = [];
 
@@ -1113,7 +1114,8 @@ class Reader
                     }
                 }
                 $data = substr($data, $byteOffset, $format['valueLength'] * $format['valueCount']);
-                switch ($format['storage']['storageType']) {
+                $storageType = isset($format['storage']) ? $format['storage']['storageType'] : static::FIELD_COMPRESSION_NONE;
+                switch ($storageType) {
                     case static::FIELD_COMPRESSION_NONE:
                         $values = array_values(unpack('V*', $data));
                         break;
