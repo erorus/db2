@@ -673,9 +673,13 @@ class Reader
             switch ($parts['storageType']) {
                 case static::FIELD_COMPRESSION_COMMON:
                     $this->recordFormat[$fieldId]['size'] = 4;
-                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
                     $this->recordFormat[$fieldId]['valueCount'] = 1;
                     $parts['defaultValue'] = pack('V', $parts['bitpackOffsetBits']);
+
+                    $this->recordFormat[$fieldId]['type'] = static::canBeFloat($parts['bitpackOffsetBits']) ?
+                        static::guessCommonFieldType($commonBlockPointer, $parts['additionalDataSize']) :
+                        static::FIELD_TYPE_INT;
+
                     $parts['bitpackOffsetBits'] = 0;
                     $parts['blockOffset'] = $commonBlockPointer;
                     $commonBlockPointer += $parts['additionalDataSize'];
@@ -1149,15 +1153,7 @@ class Reader
                         }
                     }
                     if ($couldBeFloat) {
-                        $exponent = ($value >> 23) & 0xFF;
-                        if ($exponent == 0 || $exponent == 0xFF) {
-                            $couldBeFloat = false;
-                        } else {
-                            $asFloat = current(unpack('f', pack('V', $value)));
-                            if (abs($asFloat) > 1e19 || round($asFloat, 6) == 0) {
-                                $couldBeFloat = false;
-                            }
-                        }
+                        $couldBeFloat = static::canBeFloat($value);
                     }
                 }
                 $recordOffset++;
@@ -1176,6 +1172,34 @@ class Reader
         unset($format);
     }
 
+    private function guessCommonFieldType($commonBlockOffset, $commonBlockSize) {
+        $oldPos = ftell($this->fileHandle);
+
+        fseek($this->fileHandle, $this->commonBlockPos + $commonBlockOffset);
+
+        $couldBeFloat = true;
+        for ($x = 0; $x < $commonBlockSize; $x += $chunkSize) {
+            $chunkSize = min(256, $commonBlockSize - $x);
+            if ($chunkSize < 4) {
+                break;
+            }
+
+            $values = array_values(unpack('V*', fread($this->fileHandle, $chunkSize)));
+            foreach ($values as $index => $value) {
+                if ($index % 2 === 1) {
+                    if (!static::canBeFloat($value)) {
+                        $couldBeFloat = false;
+                        break 2;
+                    }
+                }
+            }
+        }
+
+        fseek($this->fileHandle, $oldPos);
+
+        return $couldBeFloat ? static::FIELD_TYPE_FLOAT : static::FIELD_TYPE_INT;
+    }
+
     private function guessPalletFieldType($palletBlockOffset, $palletBlockSize) {
         $oldPos = ftell($this->fileHandle);
 
@@ -1190,19 +1214,9 @@ class Reader
 
             $values = array_values(unpack('V*', fread($this->fileHandle, $chunkSize)));
             foreach ($values as $value) {
-                if ($value == 0) {
-                    continue;
-                }
-                $exponent = ($value >> 23) & 0xFF;
-                if ($exponent == 0 || $exponent == 0xFF) {
+                if (!static::canBeFloat($value)) {
                     $couldBeFloat = false;
                     break 2;
-                } else {
-                    $asFloat = current(unpack('f', pack('V', $value)));
-                    if (abs($asFloat) > 1e19 || round($asFloat, 6) == 0) {
-                        $couldBeFloat = false;
-                        break 2;
-                    }
                 }
             }
         }
@@ -1327,7 +1341,7 @@ class Reader
         }
 
         foreach ($sections as &$section) {
-            if ($section['copyBlockSize'] && !$section['encrypted']) {
+            if ($section['copyBlockSize'] && (!isset($section['encrypted']) || !$section['encrypted'])) {
                 fseek($this->fileHandle, $section['copyBlockPos']);
                 $entryCount = (int)floor($section['copyBlockSize'] / 8);
                 for ($x = 0; $x < $entryCount; $x++) {
@@ -1959,5 +1973,23 @@ class Reader
             }
         }
         return $result;
+    }
+
+    private static function canBeFloat($value) {
+        if ($value == 0) {
+            return true;
+        }
+
+        $exponent = ($value >> 23) & 0xFF;
+        if ($exponent === 0 || $exponent === 0xFF) {
+            return false;
+        } else {
+            $asFloat = unpack('f', pack('V', $value))[1];
+            if (abs($asFloat) > 1e19 || round($asFloat, 6) === 0.0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }
