@@ -1766,7 +1766,7 @@ class Reader
                                 substr($record, $format['offset'], $format['valueLength']),
                                 $format['storage']['offsetBits'] % 8,
                                 $format['storage']['sizeBits'],
-                                $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED
+                                $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED || $format['signed']
                             );
 
                             if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED ||
