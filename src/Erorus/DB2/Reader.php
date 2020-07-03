@@ -702,6 +702,7 @@ class Reader
                     break;
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED:
                 case static::FIELD_COMPRESSION_BITPACKED_INDEXED_ARRAY:
+                    // Warning: may mis-identify floats as being 3 bytes if that top byte is always the same.
                     $this->recordFormat[$fieldId]['size'] = static::guessPalletFieldSize($palletBlockPointer, $parts['additionalDataSize']);
                     $this->recordFormat[$fieldId]['type'] =
                         $this->recordFormat[$fieldId]['size'] == 4 ?
