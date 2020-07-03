@@ -689,7 +689,7 @@ class Reader
                     // fall through
                 case static::FIELD_COMPRESSION_BITPACKED:
                     $this->recordFormat[$fieldId]['size'] = 4;
-                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_INT;
+                    $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_UNKNOWN;
                     $this->recordFormat[$fieldId]['offset'] = (int)floor($parts['offsetBits'] / 8);
                     $this->recordFormat[$fieldId]['valueLength'] = (int)ceil(($parts['offsetBits'] + $parts['sizeBits']) / 8) - $this->recordFormat[$fieldId]['offset'] + 1;
                     $this->recordFormat[$fieldId]['valueCount'] = 1;
@@ -1066,7 +1066,7 @@ class Reader
             }
 
             $couldBeFloat = true;
-            $couldBeString = !$this->hasEmbeddedStrings;
+            $couldBeString = !$this->hasEmbeddedStrings && $format['storage']['storageType'] === static::FIELD_COMPRESSION_NONE;
             $recordOffset = 0;
             $distinctValues = [];
 
@@ -1106,7 +1106,22 @@ class Reader
                     }
                 }
                 $data = substr($data, $byteOffset, $format['valueLength'] * $format['valueCount']);
-                $values = array_values(unpack('V*', $data));
+                switch ($format['storage']['storageType']) {
+                    case static::FIELD_COMPRESSION_NONE:
+                        $values = array_values(unpack('V*', $data));
+                        break;
+                    case static::FIELD_COMPRESSION_BITPACKED:
+                    case static::FIELD_COMPRESSION_BITPACKED_SIGNED:
+                        $values = [static::extractValueFromBitstring(
+                            $data,
+                            $format['storage']['offsetBits'] % 8,
+                            $format['storage']['sizeBits'],
+                            $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED
+                        )];
+                        break;
+                    default:
+                        throw new \Exception("Cannot guess field type from storage type " . $format['storage']['storageType']);
+                }
                 foreach ($values as $valueId => $value) {
                     if ($value == 0) {
                         continue; // can't do much with this
@@ -1756,7 +1771,11 @@ class Reader
 
                             if ($format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED ||
                                 $format['storage']['storageType'] == static::FIELD_COMPRESSION_BITPACKED_SIGNED) {
-                                $field[] = $rawValue;
+                                if ($format['type'] === static::FIELD_TYPE_FLOAT) {
+                                    $field[] = round(unpack('f', pack('V', $rawValue))[1], 6);
+                                } else {
+                                    $field[] = $rawValue;
+                                }
                                 continue 2; // we're done, rawvalue is actual value
                             }
 
