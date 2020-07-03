@@ -638,28 +638,34 @@ class Reader
         $this->recordFormat = [];
         for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
             $this->recordFormat[$fieldId] = unpack('sbitShift/voffset', fread($this->fileHandle, 4));
-            $this->recordFormat[$fieldId]['valueLength'] = max(1, (int)ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8));
+            $this->recordFormat[$fieldId]['valueLength'] = (int)ceil((32 - $this->recordFormat[$fieldId]['bitShift']) / 8);
             $this->recordFormat[$fieldId]['size'] = $this->recordFormat[$fieldId]['valueLength'];
-            $this->recordFormat[$fieldId]['type'] = ($this->recordFormat[$fieldId]['size'] != 4) ? static::FIELD_TYPE_INT : static::FIELD_TYPE_UNKNOWN;
+            $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_UNKNOWN;
             if ($this->hasEmbeddedStrings && $this->recordFormat[$fieldId]['type'] == static::FIELD_TYPE_UNKNOWN
                 && !is_null($stringFields) && in_array($fieldId, $stringFields)) {
                 $this->recordFormat[$fieldId]['type'] = static::FIELD_TYPE_STRING;
             }
             $this->recordFormat[$fieldId]['signed'] = false;
             if ($fieldId > 0) {
-                $this->recordFormat[$fieldId - 1]['valueCount'] =
-                    (int)floor(($this->recordFormat[$fieldId]['offset'] - $this->recordFormat[$fieldId - 1]['offset']) / $this->recordFormat[$fieldId - 1]['valueLength']);
+                $prevFieldFormat = &$this->recordFormat[$fieldId - 1];
+                if ($prevFieldFormat['valueLength']) {
+                    $totalSize = $this->recordFormat[$fieldId]['offset'] - $prevFieldFormat['offset'];
+                    $prevFieldFormat['valueCount'] = (int)floor($totalSize / $prevFieldFormat['valueLength']);
+                }
+                unset($prevFieldFormat);
             }
         }
 
         $fieldId = $this->fieldCount - 1;
-        $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
-        $this->recordFormat[$fieldId]['valueCount'] = max(1, (int)floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
-        if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
-            (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
-             || (!$this->hasIdBlock && $this->idField == $fieldId)// or the reported ID field is the last field
-             || $this->hasEmbeddedStrings)) {                     // or we have embedded strings
-            $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
+        if ($this->recordFormat[$fieldId]['valueLength']) {
+            $remainingBytes = $this->recordSize - $this->recordFormat[$fieldId]['offset'];
+            $this->recordFormat[$fieldId]['valueCount'] = max(1, (int)floor($remainingBytes / $this->recordFormat[$fieldId]['valueLength']));
+            if ($this->recordFormat[$fieldId]['valueCount'] > 1 &&    // we're guessing the last field is an array
+                (($this->recordSize % 4 == 0 && $remainingBytes <= 4) // records may be padded to word length and the last field size <= word size
+                 || (!$this->hasIdBlock && $this->idField == $fieldId)// or the reported ID field is the last field
+                 || $this->hasEmbeddedStrings)) {                     // or we have embedded strings
+                $this->recordFormat[$fieldId]['valueCount'] = 1;      // assume the last field is scalar, and the remaining bytes are just padding
+            }
         }
 
         $commonBlockPointer = 0;
