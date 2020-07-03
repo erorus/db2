@@ -596,7 +596,7 @@ class Reader
                 $relationshipHeader = unpack('Vcount/Vmin/Vmax', fread($this->fileHandle, 4 * 3));
                 for ($relX = 0; $relX < $relationshipHeader['count']; $relX++) {
                     $relationshipData = fread($this->fileHandle, 4);
-                    $section['relationshipDataLookup'][current(unpack('V', fread($this->fileHandle, 4)))] = $relationshipData;
+                    $section['relationshipDataLookup'][unpack('V', fread($this->fileHandle, 4))[1]] = $relationshipData;
                 }
                 fseek($this->fileHandle, $workingPos);
             }
@@ -1289,7 +1289,7 @@ class Reader
                     }
 
                     for ($x = 0; $x < $recordCount; $x++) {
-                        $id = current(unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT)));
+                        $id = unpack('V', str_pad(fread($this->fileHandle, $this->recordFormat[$this->idField]['size']), 4, "\x00", STR_PAD_RIGHT))[1];
                         $this->idMap[$id] = $recIndex++;
                         fseek($this->fileHandle, $this->recordSize - $this->recordFormat[$this->idField]['size'], SEEK_CUR); // subtract for the bytes we just read
                     }
@@ -1311,14 +1311,14 @@ class Reader
                     }
                     fseek($this->fileHandle, $this->sectionHeaders[$z]['idBlockPos']);
                     for ($x = 0; $x < $this->sectionHeaders[$z]['recordCount']; $x++) {
-                        $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $recIndex++;
+                        $this->idMap[unpack('V', fread($this->fileHandle, 4))[1]] = $recIndex++;
                     }
                 }
             } else {
                 fseek($this->fileHandle, $this->idBlockPos);
                 if ($this->fileFormat == 'WDB2') {
                     for ($x = $this->minId; $x <= $this->maxId; $x++) {
-                        $record = current(unpack('V', fread($this->fileHandle, 4)));
+                        $record = unpack('V', fread($this->fileHandle, 4))[1];
                         if ($record) {
                             $this->idMap[$x] = $record - 1;
                         }
@@ -1326,7 +1326,7 @@ class Reader
                     }
                 } else {
                     for ($x = 0; $x < $this->recordCount; $x++) {
-                        $this->idMap[current(unpack('V', fread($this->fileHandle, 4)))] = $x;
+                        $this->idMap[unpack('V', fread($this->fileHandle, 4))[1]] = $x;
                     }
                 }
             }
@@ -1412,7 +1412,7 @@ class Reader
         $commonBlockEnd = $this->commonBlockPos + $this->commonBlockSize;
 
         fseek($this->fileHandle, $this->commonBlockPos);
-        $fieldCount = current(unpack('V', fread($this->fileHandle, 4)));
+        $fieldCount = unpack('V', fread($this->fileHandle, 4))[1];
         if ($fieldCount != $this->totalFieldCount) {
             throw new \Exception(sprintf("Expected %d fields in common block, found %d", $this->totalFieldCount, $fieldCount));
         }
@@ -1485,7 +1485,7 @@ class Reader
             }
 
             for ($entry = 0; $entry < $entryCount; $entry++) {
-                $id = current(unpack('V', fread($this->fileHandle, 4)));
+                $id = unpack('V', fread($this->fileHandle, 4))[1];
                 if ($embeddedStrings) {
                     // @codeCoverageIgnoreStart
                     // file with both embedded strings and common block not found in wild, this is just a guess
@@ -1602,7 +1602,7 @@ class Reader
                 fseek($this->fileHandle, $relationshipDataPos + $relationshipOffset);
                 $data .= fread($this->fileHandle, 4);
 
-                $relationshipOffset = current(unpack('V', fread($this->fileHandle, 4)));
+                $relationshipOffset = unpack('V', fread($this->fileHandle, 4))[1];
                 if ($relationshipOffset != $recordOffsetInSection) {
                     throw new \Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
                         $recordOffset, $recordOffsetInSection, $relationshipOffset));
@@ -1659,7 +1659,7 @@ class Reader
             $numCommonRecs = (int)floor($this->recordFormat[$fieldId]['storage']['additionalDataSize'] / 8) - 1;
 
             for ($x = 0; $x < $numCommonRecs; $x++) {
-                $commonId = current(unpack('V', fread($this->fileHandle, 4)));
+                $commonId = unpack('V', fread($this->fileHandle, 4))[1];
                 $this->recordFormat[$fieldId]['commonCache'][$commonId] = fread($this->fileHandle, 4);
             }
         }
@@ -1793,19 +1793,19 @@ class Reader
                         if ($format['signed']) {
                             switch ($format['size']) {
                                 case 8:
-                                    $field[] = current(unpack('q', $rawValue));
+                                    $field[] = unpack('q', $rawValue)[1];
                                     break;
                                 case 4:
-                                    $field[] = current(unpack('l', $rawValue));
+                                    $field[] = unpack('l', $rawValue)[1];
                                     break;
                                 case 3:
-                                    $field[] = current(unpack('l', $rawValue . (ord(substr($rawValue, -1)) & 0x80 ? "\xFF" : "\x00")));
+                                    $field[] = unpack('l', $rawValue . (ord(substr($rawValue, -1)) & 0x80 ? "\xFF" : "\x00"))[1];
                                     break;
                                 case 2:
-                                    $field[] = current(unpack('s', $rawValue));
+                                    $field[] = unpack('s', $rawValue)[1];
                                     break;
                                 case 1:
-                                    $field[] = current(unpack('c', $rawValue));
+                                    $field[] = unpack('c', $rawValue)[1];
                                     break;
                                 case 0:
                                     $field[] = 0;
@@ -1813,20 +1813,20 @@ class Reader
                             }
                         } else {
                             if ($format['size'] == 8) {
-                                $field[] = current(unpack('P', $rawValue));
+                                $field[] = unpack('P', $rawValue)[1];
                             } else {
                                 if ($format['size'] < 4) {
                                     $rawValue = str_pad($rawValue, 4, "\x00", STR_PAD_RIGHT);
                                 }
-                                $field[] = current(unpack('V', $rawValue));
+                                $field[] = unpack('V', $rawValue)[1];
                             }
                         }
                         break;
                     case static::FIELD_TYPE_FLOAT:
-                        $field[] = round(current(unpack('f', $rawValue)), 6);
+                        $field[] = round(unpack('f', $rawValue)[1], 6);
                         break;
                     case static::FIELD_TYPE_STRING:
-                        $stringPos = current(unpack('V', $rawValue));
+                        $stringPos = unpack('V', $rawValue)[1];
                         $stringSection = -1;
 
                         if ($sectionId >= 0) {
