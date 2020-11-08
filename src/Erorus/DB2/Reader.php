@@ -1891,6 +1891,26 @@ class Reader
 
     // standard usage
 
+    /**
+     * Fetches column names from the table definition at WoWDBDefs and sets them with $this->setFieldNames()
+     */
+    public function fetchColumnNames() {
+        $toSet = [];
+        $indexOffset = 0;
+        foreach ($this->getDBDef() as $index => $def) {
+            if (isset($def['annotations']['noninline'])) {
+                $indexOffset -= 1;
+                continue;
+            }
+            if (isset($def['name'])) {
+                $toSet[$index + $indexOffset] = $def['name'];
+            }
+        }
+        if ($toSet) {
+            $this->setFieldNames($toSet);
+        }
+    }
+
     public function getFieldCount() {
         return $this->totalFieldCount;
     }

@@ -13,6 +13,7 @@ if (isset($argv[1])) {
 $reader = new Reader($path);
 echo "Layout: ", dechex($reader->getLayoutHash()), "\n";
 if (isset($argv[2])) {
+    $reader->fetchColumnNames();
     print_r($reader->getRecord($argv[2]));
     exit;
 }
