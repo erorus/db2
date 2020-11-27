@@ -1906,9 +1906,8 @@ class Reader
                 $toSet[$index + $indexOffset] = $def['name'];
             }
         }
-        if ($toSet) {
-            $this->setFieldNames($toSet);
-        }
+
+        return $this->setFieldNames($toSet);
     }
 
     public function getFieldCount() {

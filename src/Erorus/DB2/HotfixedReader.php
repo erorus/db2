@@ -46,7 +46,10 @@ class HotfixedReader
      * Fetches column names from the table definition at WoWDBDefs and sets them with $this->setFieldNames()
      */
     public function fetchColumnNames() {
-        $this->db2->fetchColumnNames();
+        $ret = $this->db2->fetchColumnNames();
+        $this->dbcache->setFieldNames($ret);
+
+        return $ret;
     }
 
     public function getFieldCount() {
