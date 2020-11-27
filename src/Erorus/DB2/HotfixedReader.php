@@ -42,6 +42,13 @@ class HotfixedReader
         ksort($this->idSource);
     }
 
+    /**
+     * Fetches column names from the table definition at WoWDBDefs and sets them with $this->setFieldNames()
+     */
+    public function fetchColumnNames() {
+        $this->db2->fetchColumnNames();
+    }
+
     public function getFieldCount() {
         return $this->db2->getFieldCount();
     }
