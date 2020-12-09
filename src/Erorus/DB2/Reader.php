@@ -1898,7 +1898,7 @@ class Reader
         $toSet = [];
         $indexOffset = 0;
         foreach ($this->getDBDef() as $index => $def) {
-            if (isset($def['annotations']['noninline'])) {
+            if (isset($def['annotations']['noninline']) && !isset($def['annotations']['relation'])) {
                 $indexOffset -= 1;
                 continue;
             }
