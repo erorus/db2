@@ -1385,9 +1385,22 @@ class Reader
         // only required when hasEmbeddedStrings,
         // since it has the index block to map back into the data block
 
+        $isWdc2 = in_array($this->fileFormat, ['WDC2', '1SLC']);
+
         $idLists = [];
         foreach ($this->sectionHeaders as $sectionId => $section) {
-            if (isset($section['indexIdListSize']) && $section['indexIdListSize'] && !$section['encrypted']) {
+            if ($section['encrypted']) {
+                continue;
+            }
+
+            if ($isWdc2) {
+                // No ID list in the file.
+                $idLists[$sectionId] = range($this->minId, $this->maxId);
+            } else {
+                // This format typically includes an ID list.
+                if (!isset($section['indexIdListSize']) || $section['indexIdListSize'] === 0) {
+                    continue;
+                }
                 fseek($this->fileHandle, $section['indexIdListPos']);
                 $idLists[$sectionId] = array_values(unpack('V*', fread($this->fileHandle, $section['indexIdListSize'])));
             }
