@@ -1876,14 +1876,16 @@ class Reader
                         $stringSection = -1;
 
                         if ($sectionId >= 0) {
-                            // Move back to first value of field
-                            $stringPos += 4 * $valueId;
-                            // Move back to start of row
-                            $stringPos += $format['offset'];
-                            // Move back to start of first record
-                            $stringPos += $recordOffset * $this->recordSize;
-                            // Advance past all data records
-                            $stringPos -= $this->recordCount * $this->recordSize;
+                            if ($stringPos !== 0) {
+                                // Move back to first value of field
+                                $stringPos += 4 * $valueId;
+                                // Move back to start of row
+                                $stringPos += $format['offset'];
+                                // Move back to start of first record
+                                $stringPos += $recordOffset * $this->recordSize;
+                                // Advance past all data records
+                                $stringPos -= $this->recordCount * $this->recordSize;
+                            }
 
                             // Modify stringPos to offset within correct string block, and get section of that block
                             $this->getStringFileOffset($stringPos, $stringSection);
