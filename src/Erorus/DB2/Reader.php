@@ -1386,6 +1386,7 @@ class Reader
         // since it has the index block to map back into the data block
 
         $isWdc2 = in_array($this->fileFormat, ['WDC2', '1SLC']);
+        $maxRecordIndex = max($this->idMap);
 
         $idLists = [];
         foreach ($this->sectionHeaders as $sectionId => $section) {
@@ -1429,7 +1430,10 @@ class Reader
                     $pointer = unpack('Vpos/vsize', fread($this->fileHandle, 6));
                     $pointer['id'] = $x;
                 }
-                if ($pointer['size'] > 0 && isset($this->idMap[$pointer['id']])) {
+                if ($pointer['size'] > 0) {
+                    if (!isset($this->idMap[$pointer['id']])) {
+                        $this->idMap[$pointer['id']] = ++$maxRecordIndex;
+                    }
                     $this->recordOffsets[$this->idMap[$pointer['id']]] = $pointer;
                 }
             }
@@ -1748,7 +1752,8 @@ class Reader
     }
 
     private function getRecordByOffset($recordOffset, $id) {
-        if ($recordOffset < 0 || $recordOffset >= $this->recordCount) {
+        // Blizzard's record count may be inaccurate if there is an offset map.
+        if (!$this->recordOffsets && ($recordOffset < 0 || $recordOffset >= $this->recordCount)) {
             // @codeCoverageIgnoreStart
             throw new \Exception("Requested record offset $recordOffset out of bounds: 0-".$this->recordCount);
             // @codeCoverageIgnoreEnd
