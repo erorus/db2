@@ -120,6 +120,7 @@ class Reader
                 case 'WDC2':
                 case 'WDC3':
                 case '1SLC':
+                case 'WDC4':
                     if (!is_null($arg) && !is_array($arg)) {
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
@@ -631,6 +632,21 @@ class Reader
         $this->commonBlockPos = $this->palletDataPos + $this->palletDataSize;
 
         $eof += $this->commonBlockPos + $this->commonBlockSize;
+
+        if ($this->fileFormat === 'WDC4') {
+            $returnTo = ftell($this->fileHandle);
+            $encryptedIdBlockPos = $this->commonBlockPos + $this->commonBlockSize;
+            fseek($this->fileHandle, $encryptedIdBlockPos);
+            for ($x = 1; $x < $this->sectionCount; $x++) {
+                $idCount = unpack('V', fread($this->fileHandle, 4))[1];
+                fseek($this->fileHandle, $idCount * 4, SEEK_CUR);
+            }
+            $encryptedIdBlockSize = ftell($this->fileHandle) - $encryptedIdBlockPos;
+            fseek($this->fileHandle, $returnTo);
+
+            $eof += $encryptedIdBlockSize;
+        }
+
         if ($eof != $this->fileSize) {
             throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
