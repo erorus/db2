@@ -121,6 +121,7 @@ class Reader
                 case 'WDC3':
                 case '1SLC':
                 case 'WDC4':
+                case 'WDC5':
                     if (!is_null($arg) && !is_array($arg)) {
                         throw new \Exception("You may only pass an array of string fields when loading a DB2");
                     }
@@ -492,6 +493,15 @@ class Reader
         $isWdc2 = $this->fileFormat == 'WDC2' || $this->fileFormat == '1SLC';
 
         fseek($this->fileHandle, 4);
+
+        if ($this->fileFormat === 'WDC5') {
+            // Skip version(?)
+            fseek($this->fileHandle, 4, SEEK_CUR);
+
+            // Skip version string(?)
+            fseek($this->fileHandle, 0x80, SEEK_CUR);
+        }
+
         $parts = array_values(unpack($headerFormat, fread($this->fileHandle, 68)));
 
         $this->recordCount          = $parts[0];
@@ -633,7 +643,7 @@ class Reader
 
         $eof += $this->commonBlockPos + $this->commonBlockSize;
 
-        if ($this->fileFormat === 'WDC4') {
+        if (($this->fileFormat === 'WDC4') || ($this->fileFormat === 'WDC5')) {
             $returnTo = ftell($this->fileHandle);
             $encryptedIdBlockPos = $this->commonBlockPos + $this->commonBlockSize;
             fseek($this->fileHandle, $encryptedIdBlockPos);
