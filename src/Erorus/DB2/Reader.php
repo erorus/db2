@@ -2,6 +2,8 @@
 
 namespace Erorus\DB2;
 
+use Exception;
+
 class Reader
 {
     const FIELD_TYPE_UNKNOWN = 0;
@@ -72,15 +74,17 @@ class Reader
 
     private $commonLookup = [];
 
+    private static $dbDefsDirectory = null;
+
     function __construct($db2path, $arg = null) {
         if (is_string($db2path)) {
             $this->fileHandle = @fopen($db2path, 'rb');
             if ($this->fileHandle === false) {
-                throw new \Exception("Error opening ".$db2path);
+                throw new Exception("Error opening ".$db2path);
             }
             $this->fileName = basename($db2path);
         } else {
-            throw new \Exception("Must supply path to DB2 file");
+            throw new Exception("Must supply path to DB2 file");
         }
 
         $fstat = fstat($this->fileHandle);
@@ -96,7 +100,7 @@ class Reader
                     $this->openHotfix($arg);
                     break;
                 default:
-                    throw new \Exception("Unknown ADB format: ".$this->fileFormat);
+                    throw new Exception("Unknown ADB format: ".$this->fileFormat);
             }
         } else {
             switch ($this->fileFormat) {
@@ -107,13 +111,13 @@ class Reader
                 case 'WDB5':
                 case 'WDB6':
                     if (!is_null($arg) && !is_array($arg)) {
-                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                        throw new Exception("You may only pass an array of string fields when loading a DB2");
                     }
                     $this->openWdb5($arg);
                     break;
                 case 'WDC1':
                     if (!is_null($arg) && !is_array($arg)) {
-                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                        throw new Exception("You may only pass an array of string fields when loading a DB2");
                     }
                     $this->openWdc1($arg);
                     break;
@@ -123,12 +127,12 @@ class Reader
                 case 'WDC4':
                 case 'WDC5':
                     if (!is_null($arg) && !is_array($arg)) {
-                        throw new \Exception("You may only pass an array of string fields when loading a DB2");
+                        throw new Exception("You may only pass an array of string fields when loading a DB2");
                     }
                     $this->openWdc2($arg);
                     break;
                 default:
-                    throw new \Exception("Unknown DB2 format: ".$this->fileFormat);
+                    throw new Exception("Unknown DB2 format: ".$this->fileFormat);
             }
         }
     }
@@ -174,7 +178,7 @@ class Reader
 
         $eof = $this->copyBlockPos + $this->copyBlockSize;
         if ($eof != $this->fileSize) {
-            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+            throw new Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
         $this->recordFormat = [];
@@ -232,7 +236,7 @@ class Reader
 
         if ($this->hasEmbeddedStrings) {
             if (!$this->hasIdBlock) {
-                throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
+                throw new Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
             $this->stringBlockPos = $this->fileSize - $this->copyBlockSize - $this->commonBlockSize - ($this->recordCount * 4);
             $this->indexBlockPos = $this->stringBlockSize;
@@ -248,7 +252,7 @@ class Reader
 
         $eof = $this->commonBlockPos + $this->commonBlockSize;
         if ($eof != $this->fileSize) {
-            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+            throw new Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
         fseek($this->fileHandle, $preambleLength);
@@ -280,10 +284,10 @@ class Reader
 
         if (!$this->hasIdBlock) {
             if ($this->idField >= $this->fieldCount) {
-                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
+                throw new Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
             }
             if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
-                throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
+                throw new Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
             }
         }
 
@@ -340,12 +344,12 @@ class Reader
         $this->hasIdBlock = ($this->flags & 4) > 0;
 
         if ($this->fieldStorageInfoSize != $this->totalFieldCount * 24) {
-            throw new \Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
+            throw new Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
         }
 
         if ($this->hasEmbeddedStrings) {
             if (!$this->hasIdBlock) {
-                throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
+                throw new Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
 
             $this->stringBlockSize = 0;
@@ -367,7 +371,7 @@ class Reader
 
         $eof = $this->relationshipDataPos + $this->relationshipDataSize;
         if ($eof != $this->fileSize) {
-            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+            throw new Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
         fseek($this->fileHandle, $headerLength);
@@ -438,7 +442,7 @@ class Reader
                     }
                     break;
                 default:
-                    throw new \Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
+                    throw new Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
             }
 
             $this->recordFormat[$fieldId]['storage'] = $parts;
@@ -446,10 +450,10 @@ class Reader
 
         if (!$this->hasIdBlock) {
             if ($this->idField >= $this->fieldCount) {
-                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
+                throw new Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
             }
             if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
-                throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
+                throw new Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
             }
         }
 
@@ -473,7 +477,7 @@ class Reader
         if ($this->hasEmbeddedStrings) {
             for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
                 if ($this->recordFormat[$fieldId]['storage']['storageType'] != static::FIELD_COMPRESSION_NONE) {
-                    throw new \Exception("DB2 with Embedded Strings has compressed field $fieldId");
+                    throw new Exception("DB2 with Embedded Strings has compressed field $fieldId");
                 }
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
@@ -618,7 +622,7 @@ class Reader
         $this->headerSize = ftell($this->fileHandle) + $this->fieldCount * 4;
 
         if ($this->recordCount != $recordCountSum) {
-            throw new \Exception(sprintf('Expected %d records, found %d records in %d sections', $this->recordCount, $recordCountSum, $this->sectionCount));
+            throw new Exception(sprintf('Expected %d records, found %d records in %d sections', $this->recordCount, $recordCountSum, $this->sectionCount));
         }
 
         if ($this->recordCount == 0) {
@@ -626,12 +630,12 @@ class Reader
         }
 
         if ($this->fieldStorageInfoSize != $this->totalFieldCount * 24) {
-            throw new \Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
+            throw new Exception(sprintf('Expected %d bytes for storage info, instead found %d', $this->totalFieldCount * 24, $this->fieldStorageInfoSize));
         }
 
         if ($this->hasEmbeddedStrings) {
             if (!$this->hasIdBlock) {
-                throw new \Exception("File has embedded strings and no ID block, which was not expected, aborting");
+                throw new Exception("File has embedded strings and no ID block, which was not expected, aborting");
             }
         }
 
@@ -658,7 +662,7 @@ class Reader
         }
 
         if ($eof != $this->fileSize) {
-            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+            throw new Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
         $this->recordFormat = [];
@@ -737,7 +741,7 @@ class Reader
                     }
                     break;
                 default:
-                    throw new \Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
+                    throw new Exception(sprintf("Unknown field compression type ID: %d", $parts['storageType']));
             }
 
             $this->recordFormat[$fieldId]['storage'] = $parts;
@@ -767,10 +771,10 @@ class Reader
 
         if (!$this->hasIdBlock) {
             if ($this->idField >= $this->fieldCount) {
-                throw new \Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
+                throw new Exception("Expected ID field " . $this->idField . " does not exist. Only found " . $this->fieldCount . " fields.");
             }
             if ($this->recordFormat[$this->idField]['valueCount'] != 1) {
-                throw new \Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
+                throw new Exception("Expected ID field " . $this->idField . " reportedly has " . $this->recordFormat[$this->idField]['valueCount'] . " values per row");
             }
         }
 
@@ -794,7 +798,7 @@ class Reader
         if ($this->hasEmbeddedStrings) {
             for ($fieldId = 0; $fieldId < $this->fieldCount; $fieldId++) {
                 if ($this->recordFormat[$fieldId]['storage']['storageType'] != static::FIELD_COMPRESSION_NONE) {
-                    throw new \Exception("DB2 with Embedded Strings has compressed field $fieldId");
+                    throw new Exception("DB2 with Embedded Strings has compressed field $fieldId");
                 }
                 unset($this->recordFormat[$fieldId]['offset']); // just to make sure we don't use them later, because they're meaningless now
             }
@@ -837,12 +841,12 @@ class Reader
 
         foreach (['tableHash', 'layoutHash', 'fieldCount'] as $headerField) {
             if ($this->$headerField != $sourceReader->$headerField) {
-                throw new \Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
+                throw new Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
             }
         }
         if (($sourceReader->locale & $this->locale) != $this->locale) {
             $headerField = 'locale';
-            throw new \Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
+            throw new Exception("$headerField of {$this->fileName} ({$this->$headerField}) does not match $headerField of {$sourceReader->fileName} ({$sourceReader->$headerField})");
         }
 
         if ($this->hasEmbeddedStrings) {
@@ -863,7 +867,7 @@ class Reader
 
         $eof = $this->copyBlockPos + $this->copyBlockSize;
         if ($eof != $this->fileSize) {
-            throw new \Exception("Expected size: $eof, actual size: ".$this->fileSize);
+            throw new Exception("Expected size: $eof, actual size: ".$this->fileSize);
         }
 
         $this->recordFormat = $sourceReader->recordFormat;
@@ -926,7 +930,7 @@ class Reader
                 } elseif (in_array($fieldAttributes['size'], [1, 2])) {
                     // Assume this stays the same?
                 } else {
-                    throw new \Exception(
+                    throw new Exception(
                         sprintf(
                             "Could not determine field size for field index %d in table %s (Original size %d)",
                             $fieldId,
@@ -963,13 +967,13 @@ class Reader
                 break;
 
             default:
-                throw new \Exception('Unexpected hotfix file version: %d', $hotfixVersion);
+                throw new Exception('Unexpected hotfix file version: %d', $hotfixVersion);
         }
 
         while (ftell($this->fileHandle) + $recordHeaderSize < $this->fileSize) {
             $recordHeader = unpack($unpackFormat, fread($this->fileHandle, $recordHeaderSize));
             if ($recordHeader['magic'] != 'XFTH') {
-                throw new \Exception(sprintf("Missing expected XFTH record header at position %d", ftell($this->fileHandle) - $recordHeaderSize));
+                throw new Exception(sprintf("Missing expected XFTH record header at position %d", ftell($this->fileHandle) - $recordHeaderSize));
             }
             if ($recordHeader['size'] == 0) {
                 continue;
@@ -992,23 +996,31 @@ class Reader
      */
     private function getDBDef() {
         $baseName = preg_replace('/\.[\w\W]*/', '', $this->fileName);
-        $url = sprintf('https://raw.githubusercontent.com/wowdev/WoWDBDefs/master/definitions/%s.dbd', $baseName);
+        if (self::$dbDefsDirectory !== null) {
+            $data = file_get_contents(self::$dbDefsDirectory . DIRECTORY_SEPARATOR . "{$baseName}.dbd");
+        } else {
+            $url = sprintf('https://raw.githubusercontent.com/wowdev/WoWDBDefs/master/definitions/%s.dbd', $baseName);
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => $url,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 3,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 8,
-            CURLOPT_CONNECTTIMEOUT => 6,
-            CURLOPT_ENCODING       => 'gzip',
-        ]);
-        $data = curl_exec($ch);
-        $responseCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+            $ch = curl_init();
+            curl_setopt_array($ch, [
+                CURLOPT_URL            => $url,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS      => 3,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 8,
+                CURLOPT_CONNECTTIMEOUT => 6,
+                CURLOPT_ENCODING       => 'gzip',
+            ]);
+            $data = curl_exec($ch);
+            $responseCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
 
-        if (!preg_match('/^2\d\d/', $responseCode) || !$data) {
+            if (!preg_match('/^2\d\d/', $responseCode)) {
+                $data = null;
+            }
+        }
+
+        if (!$data) {
             return [];
         }
 
@@ -1085,7 +1097,7 @@ class Reader
                             if ($byteOffset === false) {
                                 // should never happen, we just assigned this field as a string in a prior loop!
                                 // @codeCoverageIgnoreStart
-                                throw new \Exception("Could not find end of embedded string $offsetFieldId x $offsetFieldValueId in record $recordOffset");
+                                throw new Exception("Could not find end of embedded string $offsetFieldId x $offsetFieldValueId in record $recordOffset");
                                 // @codeCoverageIgnoreEnd
                             }
                             $byteOffset++; // skip nul byte
@@ -1157,7 +1169,7 @@ class Reader
                             for ($offsetFieldValueId = 0; $offsetFieldValueId < $this->recordFormat[$offsetFieldId]['valueCount']; $offsetFieldValueId++) {
                                 $byteOffset = strpos($data, "\x00", $byteOffset);
                                 if ($byteOffset === false) {
-                                    throw new \Exception("Could not find end of embedded string $offsetFieldId x $offsetFieldValueId in record $recordOffset");
+                                    throw new Exception("Could not find end of embedded string $offsetFieldId x $offsetFieldValueId in record $recordOffset");
                                 }
                                 $byteOffset++; // skip nul byte
                             }
@@ -1182,7 +1194,7 @@ class Reader
                         )];
                         break;
                     default:
-                        throw new \Exception("Cannot guess field type from storage type " . $format['storage']['storageType']);
+                        throw new Exception("Cannot guess field type from storage type " . $format['storage']['storageType']);
                 }
                 foreach ($values as $valueId => $value) {
                     if ($value == 0) {
@@ -1207,7 +1219,7 @@ class Reader
                                 try {
                                     $sectionPos = $stringPos;
                                     $stringPos  = $this->getStringFileOffset($sectionPos);
-                                } catch (\Exception $e) {
+                                } catch (Exception $e) {
                                     $couldBeString = false;
                                 }
                             }
@@ -1424,7 +1436,7 @@ class Reader
                 for ($x = 0; $x < $entryCount; $x++) {
                     list($newId, $existingId) = array_values(unpack('V*', fread($this->fileHandle, 8)));
                     if (!isset($this->idMap[$existingId])) {
-                        throw new \Exception("Copy block referenced ID $existingId which does not exist");
+                        throw new Exception("Copy block referenced ID $existingId which does not exist");
                     }
                     $this->idMap[$newId] = $this->idMap[$existingId];
                 }
@@ -1508,7 +1520,7 @@ class Reader
         fseek($this->fileHandle, $this->commonBlockPos);
         $fieldCount = unpack('V', fread($this->fileHandle, 4))[1];
         if ($fieldCount != $this->totalFieldCount) {
-            throw new \Exception(sprintf("Expected %d fields in common block, found %d", $this->totalFieldCount, $fieldCount));
+            throw new Exception(sprintf("Expected %d fields in common block, found %d", $this->totalFieldCount, $fieldCount));
         }
 
         // determine whether each table entry data is stored in 4 bytes (7.3 onward), or fewer bytes depending on type (pre-7.3)
@@ -1532,7 +1544,7 @@ class Reader
             list($entryCount, $enumType) = array_values(unpack('V1x/C1y', fread($this->fileHandle, 5)));
             if ($field < $this->fieldCount) {
                 if ($entryCount > 0) {
-                    throw new \Exception(sprintf("Expected 0 entries in common block field %d, instead found %d", $field, $entryCount));
+                    throw new Exception(sprintf("Expected 0 entries in common block field %d, instead found %d", $field, $entryCount));
                 }
                 continue;
             }
@@ -1556,7 +1568,7 @@ class Reader
                 case 4: // 4-byte int
                     break;
                 default:
-                    throw new \Exception("Unknown common field type: $enumType");
+                    throw new Exception("Unknown common field type: $enumType");
             }
 
             $this->recordFormat[$field] = [
@@ -1621,12 +1633,12 @@ class Reader
                         }
                     }
                 }
-                throw new \Exception("Requested record offset $recordOffset which was not defined");
+                throw new Exception("Requested record offset $recordOffset which was not defined");
             }
             $pointer = $this->recordOffsets[$recordOffset];
             if ($pointer['size'] == 0) {
                 // @codeCoverageIgnoreStart
-                throw new \Exception("Requested record offset $recordOffset which is empty");
+                throw new Exception("Requested record offset $recordOffset which is empty");
                 // @codeCoverageIgnoreEnd
             }
             fseek($this->fileHandle, $pointer['pos']);
@@ -1655,7 +1667,7 @@ class Reader
                     break;
                 }
                 if ($offsetSearch !== false) {
-                    throw new \Exception("Could not find record offset $recordOffset in {$this->recordCount} records");
+                    throw new Exception("Could not find record offset $recordOffset in {$this->recordCount} records");
                 }
             } else {
                 fseek($this->fileHandle, $this->headerSize + $recordOffset * $this->recordSize);
@@ -1689,7 +1701,7 @@ class Reader
             } else {
                 // Legacy path.
                 if ($relationshipOffset >= $relationshipDataSize) {
-                    throw new \Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
+                    throw new Exception(sprintf("Attempted to read from offset %d in relationship map, size is only %d",
                         $relationshipOffset, $relationshipDataSize));
                 }
 
@@ -1698,7 +1710,7 @@ class Reader
 
                 $relationshipOffset = unpack('V', fread($this->fileHandle, 4))[1];
                 if ($relationshipOffset != $recordOffsetInSection) {
-                    throw new \Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
+                    throw new Exception(sprintf("Record offset %d (section offset %d) attempted read of relationship offset %d",
                         $recordOffset, $recordOffsetInSection, $relationshipOffset));
                 }
             }
@@ -1736,7 +1748,7 @@ class Reader
 
         $offset = $storage['blockOffset'] + $palletId * $recordSize + $valueId * 4;
         if ($offset > $this->palletDataSize) {
-            throw new \Exception(sprintf("Requested pallet data offset %d which is beyond pallet data size %d", $offset, $this->palletDataSize));
+            throw new Exception(sprintf("Requested pallet data offset %d which is beyond pallet data size %d", $offset, $this->palletDataSize));
         }
         fseek($this->fileHandle, $this->palletDataPos + $offset);
 
@@ -1781,7 +1793,7 @@ class Reader
             $stringBlockOffset -= $section['stringBlockSize'];
         }
 
-        throw new \Exception("Searched past all string blocks");
+        throw new Exception("Searched past all string blocks");
     }
 
     private function getString($stringBlockOffset, $sectionId) {
@@ -1795,7 +1807,7 @@ class Reader
 
         if ($stringBlockOffset >= $stringBlockSize) {
             // @codeCoverageIgnoreStart
-            throw new \Exception("Asked to get string from $stringBlockOffset, string block size is only $stringBlockSize");
+            throw new Exception("Asked to get string from $stringBlockOffset, string block size is only $stringBlockSize");
             // @codeCoverageIgnoreEnd
         }
         $maxLength = $stringBlockSize - $stringBlockOffset;
@@ -1808,13 +1820,13 @@ class Reader
         // Blizzard's record count may be inaccurate if there is an offset map.
         if (!$this->recordOffsets && ($recordOffset < 0 || $recordOffset >= $this->recordCount)) {
             // @codeCoverageIgnoreStart
-            throw new \Exception("Requested record offset $recordOffset out of bounds: 0-".$this->recordCount);
+            throw new Exception("Requested record offset $recordOffset out of bounds: 0-".$this->recordCount);
             // @codeCoverageIgnoreEnd
         }
 
         $record = $this->getRawRecord($recordOffset, $id);
         if (is_null($record)) {
-            throw new \Exception("Trying to read null record $recordOffset");
+            throw new Exception("Trying to read null record $recordOffset");
         }
         $sectionId = -1;
         $sectionRecordsSkipped = 0;
@@ -1871,7 +1883,7 @@ class Reader
                             break;
 
                         default:
-                            throw new \Exception(sprintf("Field %d has an unknown storage type: %d", $fieldId, $format['storage']['storageType']));
+                            throw new Exception(sprintf("Field %d has an unknown storage type: %d", $fieldId, $format['storage']['storageType']));
                     }
                 } else {
                     if ($this->hasEmbeddedStrings && $format['type'] == static::FIELD_TYPE_STRING) {
@@ -2033,7 +2045,7 @@ class Reader
     public function setFieldsSigned(Array $fields) {
         foreach ($fields as $fieldId => $isSigned) {
             if ($fieldId < 0 || $fieldId >= $this->totalFieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
+                throw new Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
             }
             if (!$this->hasIdBlock && $this->idField == $fieldId) {
                 continue;
@@ -2054,13 +2066,13 @@ class Reader
     public function setFieldNames(Array $names) {
         foreach ($names as $fieldId => $name) {
             if (!is_numeric($fieldId)) {
-                throw new \Exception("Field ID $fieldId must be numeric");
+                throw new Exception("Field ID $fieldId must be numeric");
             }
             if (is_numeric($name)) {
-                throw new \Exception("Field $fieldId Name ($name) must NOT be numeric");
+                throw new Exception("Field $fieldId Name ($name) must NOT be numeric");
             }
             if ($fieldId < 0 || $fieldId >= $this->totalFieldCount) {
-                throw new \Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
+                throw new Exception("Field ID $fieldId out of bounds: 0-".($this->totalFieldCount - 1));
             }
             if (!$name) {
                 unset($this->recordFormat[$fieldId]['name']);
@@ -2093,6 +2105,18 @@ class Reader
             }
         }
         return $result;
+    }
+
+    public static function setDbDefsDirectory($path) {
+        if ($path !== null) {
+            $path = (string)($path);
+            $sep = DIRECTORY_SEPARATOR;
+            $path = rtrim($path, $sep);
+            if (!is_readable("{$path}{$sep}Map.dbd")) {
+                throw new Exception("Could not read Map.dbd from [{$path}]");
+            }
+        }
+        self::$dbDefsDirectory = $path;
     }
 
     private static function canBeFloat($value) {
