@@ -912,7 +912,7 @@ class Reader
 
         $this->recordFormat = $sourceReader->recordFormat;
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
-            if (isset($def[$fieldId]['type'])) {
+            if (isset($def[$fieldId]['type']) && $fieldAttributes['size'] === 4) {
                 $fieldAttributes['type'] = $def[$fieldId]['type'];
             }
             // Only modify the sizes of ints
@@ -2026,7 +2026,7 @@ class Reader
             if (isset($def['name'])) {
                 $toSet[$index + $indexOffset] = $def['name'];
             }
-            if (isset($def['type'])) {
+            if (isset($def['type']) && ($this->recordFormat[$index + $indexOffset]['size'] === 4)) {
                 $this->recordFormat[$index + $indexOffset]['type'] = $def['type'];
             }
         }
