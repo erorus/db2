@@ -912,6 +912,9 @@ class Reader
 
         $this->recordFormat = $sourceReader->recordFormat;
         foreach ($this->recordFormat as $fieldId => &$fieldAttributes) {
+            if (isset($def[$fieldId]['type'])) {
+                $fieldAttributes['type'] = $def[$fieldId]['type'];
+            }
             // Only modify the sizes of ints
             if ($fieldAttributes['type'] == self::FIELD_TYPE_INT) {
                 if (isset($fieldAttributes['isRelationshipData'])) {
@@ -1028,8 +1031,26 @@ class Reader
         $foundLayout = false;
         $layoutHex = str_pad(strtoupper(dechex($this->layoutHash)), 8, '0', STR_PAD_LEFT);
 
+        $colTypes = [];
+        $inColumnsSection = false;
+
         $lines = explode("\n", $data);
         foreach ($lines as $line) {
+            if (trim($line) === 'COLUMNS') {
+                $inColumnsSection = true;
+                continue;
+            }
+            if ($inColumnsSection) {
+                if (!trim($line)) {
+                    $inColumnsSection = false;
+                    continue;
+                }
+                $line = trim(preg_replace('/\/\/([\w\W]+)/', '', $line));
+                $lineParts = explode(' ', $line);
+                if (count($lineParts) === 2) {
+                    $colTypes[trim($lineParts[1], '?')] = $lineParts[0];
+                }
+            }
             if (!$foundLayout) {
                 if (preg_match('/^LAYOUT /', $line)) {
                     $layouts = explode(',', str_replace(' ', '', substr($line, 7)));
@@ -1063,6 +1084,21 @@ class Reader
                     $line = trim(str_replace($res[0], '', $line));
                 }
                 $col['name'] = $line;
+                if (isset($colTypes[$col['name']])) {
+                    $col['typeName'] = $colTypes[$col['name']];
+                    if (strpos($col['typeName'], 'locstring') === 0) {
+                        $col['type'] = self::FIELD_TYPE_STRING;
+                    }
+                    if (strpos($col['typeName'], 'string') === 0) {
+                        $col['type'] = self::FIELD_TYPE_STRING;
+                    }
+                    if (strpos($col['typeName'], 'float') === 0) {
+                        $col['type'] = self::FIELD_TYPE_FLOAT;
+                    }
+                    if (strpos($col['typeName'], 'int') === 0) {
+                        $col['type'] = self::FIELD_TYPE_INT;
+                    }
+                }
                 $result[] = $col;
             }
         }
@@ -1989,6 +2025,9 @@ class Reader
             }
             if (isset($def['name'])) {
                 $toSet[$index + $indexOffset] = $def['name'];
+            }
+            if (isset($def['type'])) {
+                $this->recordFormat[$index + $indexOffset]['type'] = $def['type'];
             }
         }
 
